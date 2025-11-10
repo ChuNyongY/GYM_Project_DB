@@ -27,11 +27,11 @@ app.add_middleware(
 )
 
 # 라우터 등록
-app.include_router(kiosk.router, prefix=settings.API_PREFIX)
-app.include_router(admin.router, prefix=settings.API_PREFIX)
-app.include_router(members.router, prefix=settings.API_PREFIX)
-app.include_router(rentals.router, prefix=settings.API_PREFIX)
-app.include_router(checkin.router, prefix=settings.API_PREFIX)
+app.include_router(kiosk.router, prefix=f"{settings.API_PREFIX}/kiosk", tags=["Kiosk"])
+app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["Admin"])
+app.include_router(members.router, prefix=f"{settings.API_PREFIX}/members", tags=["Members"])
+app.include_router(rentals.router, prefix=f"{settings.API_PREFIX}/rentals", tags=["Rentals"])
+app.include_router(checkin.router, prefix=f"{settings.API_PREFIX}/checkin", tags=["Check-in"])
 
 # 상태 확인 엔드포인트
 @app.get("/")
