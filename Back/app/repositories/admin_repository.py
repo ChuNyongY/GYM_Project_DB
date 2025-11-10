@@ -21,9 +21,21 @@ class AdminRepository:
     @staticmethod
     def verify_password(cursor: DictCursor, password: str) -> bool:
         admin = AdminRepository.get_admin(cursor)
+        
+        # 🔍 디버깅 로그
+        print(f"🔍 Admin data: {admin}")
+        print(f"🔍 Input password: {password}")
+        
         if not admin:
+            print("❌ No admin found!")
             return False
-        return verify_password(password, admin.get('password_hash'))
+        
+        stored_hash = admin.get('password_hash')  # ← 수정!
+        print(f"🔍 Stored hash: {stored_hash}")
+        
+        result = verify_password(password, stored_hash)
+        print(f"🔍 Verification result: {result}")
+        return result
 
     @staticmethod
     def update_password(cursor: DictCursor, admin_id: int, new_password: str) -> bool:
