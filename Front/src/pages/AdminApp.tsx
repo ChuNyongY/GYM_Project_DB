@@ -15,7 +15,7 @@ function AdminLogin({ onAuth }: { onAuth: () => void }) {
       const response = await adminService.login(pw);
       
       if (response.status === "success" && response.token) {
-        localStorage.setItem('admin_token', response.token);
+        sessionStorage.setItem('admin_token', response.token);
         onAuth();
       } else {
         setError("로그인에 실패했습니다.");
@@ -58,7 +58,7 @@ function AdminLogin({ onAuth }: { onAuth: () => void }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50"
           >
             {loading ? "로그인 중..." : "입장하기"}
           </button>
@@ -86,9 +86,15 @@ function MemberDrawer({
   const [editForm, setEditForm] = useState({
     name: member?.name || '',
     phone_number: member?.phone_number || '',
-    membership_type: member?.membership_type || '3개월',
+    membership_type: member?.membership_type || '',
     membership_start_date: member?.membership_start_date || new Date().toISOString().split('T')[0],
     membership_end_date: member?.membership_end_date || '',
+    locker_type: member?.locker_type || '',
+    locker_start_date: member?.locker_start_date || '',
+    locker_end_date: member?.locker_end_date || '',
+    uniform_type: member?.uniform_type || '',
+    uniform_start_date: member?.uniform_start_date || '',
+    uniform_end_date: member?.uniform_end_date || '',
   });
   const [checkinHistory, setCheckinHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(!isNewMember);
@@ -115,7 +121,24 @@ function MemberDrawer({
     setEditForm({...editForm, phone_number: formatted});
   };
 
-  // 출입 기록 로드
+    const getDaysLeft = (endDateStr: string | null): number => {
+    if (!endDateStr) return Infinity;
+    
+    const endDate = new Date(endDateStr);
+    const today = new Date();
+    
+    // 날짜만 비교하기 위해 시간 초기화
+    endDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const timeDiff = endDate.getTime() - today.getTime();
+    // 만료일 당일(0)부터 카운트
+    const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    
+    return daysLeft;
+  };
+
+    // 출입 기록 로드
   useEffect(() => {
     if (isNewMember || !member) {
       setLoadingHistory(false);
@@ -140,41 +163,19 @@ function MemberDrawer({
     fetchHistory();
   }, [member?.member_id, isNewMember, member]);
 
-  // 새 회원일 때 종료일 자동 설정
   useEffect(() => {
-    if (isNewMember && editForm.membership_start_date) {
-      handleMembershipChange(editForm.membership_type);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 초기화만
   }, []);
 
-  const getMemberStatus = () => {
-    if (!member || !member.is_active) {
-      return <span className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full font-semibold">비활성</span>;
-    }
-    
-    if (member.membership_end_date) {
-      const endDate = new Date(member.membership_end_date);
-      const today = new Date();
-      const daysLeft = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysLeft < 0) {
-        return <span className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full font-semibold">만료</span>;
-      } else if (daysLeft <= 7) {
-        return <span className="px-3 py-1 text-sm bg-yellow-100 text-yellow-700 rounded-full font-semibold">곧 만료 ({daysLeft}일)</span>;
-      }
-    }
-    
-    return <span className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-full font-semibold">활성</span>;
-  };
-
-  // 회원권 선택
-  const handleMembershipChange = (type: string) => {
-    const startDate = editForm.membership_start_date || new Date().toISOString().split('T')[0];
+  // 기간 계산 함수 통합
+  const calculateEndDate = (startDate: string, type: string) => {
     const start = new Date(startDate);
     let endDate = new Date(start);
 
     switch(type) {
+      case '1개월':
+        endDate.setMonth(endDate.getMonth() + 1);
+        break;
       case '3개월':
         endDate.setMonth(endDate.getMonth() + 3);
         break;
@@ -185,124 +186,242 @@ function MemberDrawer({
         endDate.setFullYear(endDate.getFullYear() + 1);
         break;
     }
+
+    return endDate.toISOString().split('T')[0];
+  };
+
+  // 회원권 선택 (토글 기능 추가)
+  const handleMembershipChange = (type: string) => {
+    // 같은 버튼 다시 클릭하면 선택 해제
+    if (editForm.membership_type === type) {
+      setEditForm({
+        ...editForm,
+        membership_type: '',
+        membership_start_date: new Date().toISOString().split('T')[0],
+        membership_end_date: '',
+      });
+      return;
+    }
+
+    const startDate = editForm.membership_start_date || new Date().toISOString().split('T')[0];
+    const endDate = calculateEndDate(startDate, type);
 
     setEditForm({
       ...editForm,
       membership_type: type,
       membership_start_date: startDate,
-      membership_end_date: endDate.toISOString().split('T')[0],
+      membership_end_date: endDate,
     });
   };
+
+  // ⭐ 락커 선택 (토글 기능 추가)
+const handleLockerChange = (type: string) => {
+  // 같은 버튼 다시 클릭하면 선택 해제
+  if (editForm.locker_type === type) {
+    setEditForm({
+      ...editForm,
+      locker_type: '',
+      locker_start_date: '',
+      locker_end_date: '',
+    });
+    return;
+  }
+
+  const startDate = new Date().toISOString().split('T')[0];
+  const endDate = calculateEndDate(startDate, type);
+
+  setEditForm({
+    ...editForm,
+    locker_type: type,
+    locker_start_date: startDate,
+    locker_end_date: endDate,
+  });
+};
+
+  // ⭐ 회원복 선택 (토글 기능 추가)
+const handleUniformChange = (type: string) => {
+  // 같은 버튼 다시 클릭하면 선택 해제
+  if (editForm.uniform_type === type) {
+    setEditForm({
+      ...editForm,
+      uniform_type: '',
+      uniform_start_date: '',
+      uniform_end_date: '',
+    });
+    return;
+  }
+
+  const startDate = new Date().toISOString().split('T')[0];
+  const endDate = calculateEndDate(startDate, type);
+
+  setEditForm({
+    ...editForm,
+    uniform_type: type,
+    uniform_start_date: startDate,
+    uniform_end_date: endDate,
+  });
+};
 
   // 시작일 변경
   const handleStartDateChange = (newStartDate: string) => {
     if (!newStartDate) return;
-
-    const start = new Date(newStartDate);
-    let endDate = new Date(start);
-
-    switch(editForm.membership_type) {
-      case '3개월':
-        endDate.setMonth(endDate.getMonth() + 3);
-        break;
-      case '6개월':
-        endDate.setMonth(endDate.getMonth() + 6);
-        break;
-      case '1년':
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        break;
-      default:
-        endDate.setMonth(endDate.getMonth() + 3);
-    }
+    const endDate = calculateEndDate(newStartDate, editForm.membership_type);
 
     setEditForm({
       ...editForm,
       membership_start_date: newStartDate,
-      membership_end_date: endDate.toISOString().split('T')[0],
+      membership_end_date: endDate,
     });
   };
 
-  // 저장
-  const handleSave = async () => {
-    // 이름 유효성 검사
-    if (!editForm.name.trim()) {
-      alert('이름을 입력해주세요.');
-      return;
-    }
+  // 락커 시작일 변경
+  const handleLockerStartDateChange = (newStartDate: string) => {
+    if (!newStartDate) return;
+    const endDate = calculateEndDate(newStartDate, editForm.locker_type);
 
-    // 이름 형식 검사 (한글 2-10자, 영문 2-20자)
-    const nameRegex = /^[가-힣]{2,10}$|^[a-zA-Z\s]{2,20}$/;
-    if (!nameRegex.test(editForm.name.trim())) {
-      alert('올바른 이름 형식이 아닙니다.\n한글 2-10자 또는 영문 2-20자로 입력해주세요.');
-      return;
-    }
-
-    // 전화번호 유효성 검사
-    if (!editForm.phone_number.trim()) {
-      alert('전화번호를 입력해주세요.');
-      return;
-    }
-
-    // 전화번호 형식 검사 (010-1234-5678 또는 01012345678)
-    const phoneRegex = /^010-\d{4}-\d{4}$|^010\d{8}$/;
-    if (!phoneRegex.test(editForm.phone_number.replace(/\s/g, ''))) {
-      alert('올바른 번호가 아닙니다.\n010으로 시작하는 11자리 번호를 입력해주세요.');
-      return;
-    }
-
-    // 시작일 검사
-    if (!editForm.membership_start_date) {
-      alert('시작일을 선택해주세요.');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      
-      if (isNewMember) {
-        await adminService.createMember({
-          name: editForm.name.trim(),
-          phone_number: editForm.phone_number,
-          membership_type: editForm.membership_type,
-          membership_start_date: editForm.membership_start_date,
-          membership_end_date: editForm.membership_end_date,
-        });
-        alert('회원이 추가되었습니다.');
-      } else {
-        await adminService.updateMember(member.member_id, {
-          name: editForm.name.trim(),
-          phone_number: editForm.phone_number,
-          membership_type: editForm.membership_type,
-          membership_start_date: editForm.membership_start_date,
-          membership_end_date: editForm.membership_end_date,
-        });
-        alert('회원 정보가 수정되었습니다.');
-      }
-      
-      onSave();
-    } catch (error: any) {
-      console.error('저장 실패:', error);
-      alert(error.response?.data?.detail || `회원 ${isNewMember ? '추가' : '수정'}에 실패했습니다.`);
-    } finally {
-      setSaving(false);
-    }
+    setEditForm({
+      ...editForm,
+      locker_start_date: newStartDate,
+      locker_end_date: endDate,
+    });
   };
+
+  // 회원복 시작일 변경
+  const handleUniformStartDateChange = (newStartDate: string) => {
+    if (!newStartDate) return;
+    const endDate = calculateEndDate(newStartDate, editForm.uniform_type);
+
+    setEditForm({
+      ...editForm,
+      uniform_start_date: newStartDate,
+      uniform_end_date: endDate,
+    });
+  };
+
+// ⭐ 저장 (회원권 필수 검사 추가)
+const handleSave = async () => {
+  // 이름 유효성 검사
+  if (!editForm.name.trim()) {
+    alert('이름을 입력해주세요.');
+    return;
+  }
+
+  // 이름 형식 검사
+  const nameRegex = /^[가-힣]{2,10}$|^[a-zA-Z\s]{2,20}$/;
+  if (!nameRegex.test(editForm.name.trim())) {
+    alert('올바른 이름 형식이 아닙니다.\n한글 2-10자 또는 영문 2-20자로 입력해주세요.');
+    return;
+  }
+
+  // 전화번호 유효성 검사
+  if (!editForm.phone_number.trim()) {
+    alert('전화번호를 입력해주세요.');
+    return;
+  }
+
+  // 전화번호 형식 검사
+  const phoneRegex = /^010-\d{4}-\d{4}$|^010\d{8}$/;
+  if (!phoneRegex.test(editForm.phone_number.replace(/\s/g, ''))) {
+    alert('올바른 번호가 아닙니다.\n010으로 시작하는 11자리 번호를 입력해주세요.');
+    return;
+  }
+
+  // 회원권 필수 검사
+  if (!editForm.membership_type) {
+    alert('회원권 종류를 선택해주세요.');
+    return;
+  }
+
+  // 시작일 검사
+  if (!editForm.membership_start_date) {
+    alert('시작일을 선택해주세요.');
+    return;
+  }
+
+  try {
+    setSaving(true);
+    
+    // 기본 데이터
+    const memberData: any = {
+      name: editForm.name.trim(),
+      phone_number: editForm.phone_number,
+      membership_type: editForm.membership_type,
+      membership_start_date: editForm.membership_start_date,
+      membership_end_date: editForm.membership_end_date,
+    };
+
+    // ⭐ 락커 정보 처리 - 빈 문자열이면 null로 전송
+    if (editForm.locker_type && editForm.locker_type.trim()) {
+      memberData.locker_type = editForm.locker_type;
+      memberData.locker_start_date = editForm.locker_start_date;
+      memberData.locker_end_date = editForm.locker_end_date;
+    } else if (!isNewMember) {
+      // ⭐ 기존 회원 수정 시 선택 해제하면 null로 설정
+      memberData.locker_type = null;
+      memberData.locker_start_date = null;
+      memberData.locker_end_date = null;
+    }
+
+    // ⭐ 회원복 정보 처리 - 빈 문자열이면 null로 전송
+    if (editForm.uniform_type && editForm.uniform_type.trim()) {
+      memberData.uniform_type = editForm.uniform_type;
+      memberData.uniform_start_date = editForm.uniform_start_date;
+      memberData.uniform_end_date = editForm.uniform_end_date;
+    } else if (!isNewMember) {
+      // ⭐ 기존 회원 수정 시 선택 해제하면 null로 설정
+      memberData.uniform_type = null;
+      memberData.uniform_start_date = null;
+      memberData.uniform_end_date = null;
+    }
+    
+    console.log('💾 전송할 데이터:', memberData);
+    
+    if (isNewMember) {
+      await adminService.createMember(memberData);
+      alert('회원이 추가되었습니다.');
+    } else {
+      await adminService.updateMember(member.member_id, memberData);
+      alert('회원 정보가 수정되었습니다.');
+    }
+    
+    onSave();
+  } catch (error: any) {
+    console.error('저장 실패:', error);
+    console.error('에러 상세:', error.response?.data);
+    
+    const errorMessage = error.response?.data?.detail 
+      ? (typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : JSON.stringify(error.response.data.detail))
+      : `회원 ${isNewMember ? '추가' : '수정'}에 실패했습니다.`;
+    
+    alert(errorMessage);
+  } finally {
+    setSaving(false);
+  }
+};
 
   // 수정 취소
-  const handleCancel = () => {
-    if (isNewMember) {
-      onClose();
-    } else {
-      setEditForm({
-        name: member.name,
-        phone_number: member.phone_number,
-        membership_type: member.membership_type || '3개월',
-        membership_start_date: member.membership_start_date || '',
-        membership_end_date: member.membership_end_date || '',
-      });
-      setIsEditMode(false);
-    }
-  };
+const handleCancel = () => {
+  if (isNewMember) {
+    onClose();
+  } else {
+    setEditForm({
+      name: member.name,
+      phone_number: member.phone_number,
+      membership_type: member.membership_type || '',
+      membership_start_date: member.membership_start_date || '',
+      membership_end_date: member.membership_end_date || '',
+      locker_type: member.locker_type || '',
+      locker_start_date: member.locker_start_date || '',
+      locker_end_date: member.locker_end_date || '',
+      uniform_type: member.uniform_type || '',
+      uniform_start_date: member.uniform_start_date || '',
+      uniform_end_date: member.uniform_end_date || '',
+    });
+    setIsEditMode(false);
+  }
+};
 
   // 회원 삭제
   const handleDelete = async () => {
@@ -351,10 +470,9 @@ function MemberDrawer({
                 </>
               )}
             </h2>
-            {/* ⭐ 순번 표시로 변경 */}
             {!isNewMember && memberIndex && (
               <p className="text-blue-100 text-sm mt-1">
-                회원번호: {memberIndex}번
+                회원번호: {member.member_rank}번
               </p>
             )}
           </div>
@@ -454,10 +572,6 @@ function MemberDrawer({
                 <dd className="text-xl font-bold text-gray-900">{member?.phone_number}</dd>
               </div>
               <div>
-                <dt className="text-sm text-gray-600 mb-1">상태</dt>
-                <dd className="mt-1">{getMemberStatus()}</dd>
-              </div>
-              <div>
                 <dt className="text-sm text-gray-600 mb-1">등록일</dt>
                 <dd className="text-base font-semibold text-gray-900">
                   {member?.created_at 
@@ -486,9 +600,12 @@ function MemberDrawer({
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">
                   회원권 종류 <span className="text-red-500">*</span>
+                  {editForm.membership_type && (
+                    <span className="ml-2 text-xs text-gray-500">(다시 클릭하면 선택 해제)</span>
+                  )}
                 </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {['3개월', '6개월', '1년'].map((type) => (
+                <div className="grid grid-cols-4 gap-3">
+                  {['1개월', '3개월', '6개월', '1년'].map((type) => (
                     <button
                       key={type}
                       type="button"
@@ -505,30 +622,33 @@ function MemberDrawer({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    시작일 <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={editForm.membership_start_date}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
+              {/* 회원권을 선택한 경우에만 날짜 표시 */}
+              {editForm.membership_type && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      시작일 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.membership_start_date}
+                      onChange={(e) => handleStartDateChange(e.target.value)}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-500 mb-2">종료일</label>
+                    <input
+                      type="date"
+                      value={editForm.membership_end_date}
+                      readOnly
+                      disabled
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-500 mb-2">종료일</label>
-                  <input
-                    type="date"
-                    value={editForm.membership_end_date}
-                    readOnly
-                    disabled
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
-                  />
-                </div>
-              </div>
+              )}
             </div>
           ) : (
             <dl className="grid grid-cols-2 gap-4">
@@ -568,6 +688,224 @@ function MemberDrawer({
                   </dd>
                 </div>
               </div>
+            </dl>
+          )}
+        </div>
+
+        {/* 락커 정보 */}
+<div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+    <span className="text-2xl">🔑</span>
+    락커 정보
+  </h3>
+  
+  {isEditMode || isNewMember ? (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-3">
+          락커 기간 (선택사항)
+          {editForm.locker_type && (
+            <span className="ml-2 text-xs text-gray-500">(다시 클릭하면 선택 해제)</span>
+          )}
+        </label>
+        <div className="grid grid-cols-4 gap-3">
+          {['1개월', '3개월', '6개월', '1년'].map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => handleLockerChange(type)}
+              className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                editForm.locker_type === type
+                  ? 'bg-yellow-500 text-white shadow-lg scale-105'
+                  : 'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:border-yellow-400 hover:bg-gray-50'
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 락커 정보 */}
+      {editForm.locker_type && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              시작일
+            </label>
+            <input
+              type="date"
+              value={editForm.locker_start_date}
+              onChange={(e) => handleLockerStartDateChange(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-500 mb-2">종료일</label>
+            <input
+              type="date"
+              value={editForm.locker_end_date}
+              readOnly
+              disabled
+              className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  ) : (
+    <dl className="grid grid-cols-2 gap-4">
+      <div>
+        <dt className="text-sm text-gray-600 mb-1">락커 기간</dt>
+        <dd>
+          {member?.locker_type ? (
+            <span className="inline-block px-4 py-2 bg-yellow-500 text-white rounded-lg font-bold text-lg">
+              {member.locker_type}
+            </span>
+          ) : (
+            <span className="text-gray-400">미선택</span>
+          )}
+        </dd>
+      </div>
+      {member?.locker_type && (
+        <div className="col-span-2 grid grid-cols-2 gap-4 mt-2">
+          <div>
+            <dt className="text-sm text-gray-600 mb-1">시작일</dt>
+            <dd className="text-lg font-semibold text-gray-900">
+              {member?.locker_start_date 
+                ? new Date(member.locker_start_date).toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                : '-'
+              }
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm text-gray-600 mb-1">종료일</dt>
+            <dd className="text-lg font-semibold text-gray-900">
+              {member?.locker_end_date 
+                ? new Date(member.locker_end_date).toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                : '-'
+              }
+            </dd>
+          </div>
+        </div>
+      )}
+    </dl>
+  )}
+</div>
+
+        {/* 회원복 정보 */}
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-2xl">👕</span>
+            회원복 정보
+          </h3>
+          
+          {isEditMode || isNewMember ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  회원복 기간 (선택사항)
+                  {editForm.uniform_type && (
+                    <span className="ml-2 text-xs text-gray-500">(다시 클릭하면 선택 해제)</span>
+                  )}
+                </label>
+                <div className="grid grid-cols-4 gap-3">
+                  {['1개월', '3개월', '6개월', '1년'].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleUniformChange(type)}
+                      className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                        editForm.uniform_type === type
+                          ? 'bg-purple-600 text-white shadow-lg scale-105'
+                          : 'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:border-purple-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 회원복을 선택한 경우에만 날짜 표시 */}
+              {editForm.uniform_type && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      시작일
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.uniform_start_date}
+                      onChange={(e) => handleUniformStartDateChange(e.target.value)}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-500 mb-2">종료일</label>
+                    <input
+                      type="date"
+                      value={editForm.uniform_end_date}
+                      readOnly
+                      disabled
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <dl className="grid grid-cols-2 gap-4">
+              <div>
+                <dt className="text-sm text-gray-600 mb-1">회원복 기간</dt>
+                <dd>
+                  {member?.uniform_type ? (
+                    <span className="inline-block px-4 py-2 bg-purple-600 text-white rounded-lg font-bold text-lg">
+                      {member.uniform_type}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">미선택</span>
+                  )}
+                </dd>
+              </div>
+              {member?.uniform_type && (
+                <div className="col-span-2 grid grid-cols-2 gap-4 mt-2">
+                  <div>
+                    <dt className="text-sm text-gray-600 mb-1">시작일</dt>
+                    <dd className="text-lg font-semibold text-gray-900">
+                      {member?.uniform_start_date 
+                        ? new Date(member.uniform_start_date).toLocaleDateString('ko-KR', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })
+                        : '-'
+                      }
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-gray-600 mb-1">종료일</dt>
+                    <dd className="text-lg font-semibold text-gray-900">
+                      {member?.uniform_end_date 
+                        ? new Date(member.uniform_end_date).toLocaleDateString('ko-KR', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })
+                        : '-'
+                      }
+                    </dd>
+                  </div>
+                </div>
+              )}
             </dl>
           )}
         </div>
@@ -634,7 +972,7 @@ function MemberDrawer({
         <button
           onClick={handleDelete}
           disabled={deleting}
-          className="fixed bottom-8 right-8 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-2xl hover:shadow-3xl transition-all duration-300 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed z-10"
+          className="fixed bottom-8 right-8 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-2xl hover:shadow-3xl transition-all duration-300 flex items-center gap-2 disabled:opacity-50 z-30"
           title="회원 삭제"
         >
           {deleting ? (
@@ -660,18 +998,26 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'expiring_soon'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'expiring_soon' | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalMembers, setTotalMembers] = useState(0);
   const [selectedMember, setSelectedMember] = useState<any>(null);
-  const [selectedMemberIndex, setSelectedMemberIndex] = useState<number>(0); // ⭐ 추가
+  const [selectedMemberIndex, setSelectedMemberIndex] = useState<number>(0);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
   const fetchMembers = async () => {
     setLoading(true);
     try {
+      const token = sessionStorage.getItem('admin_token');
+      if (!token) {
+        console.error('토큰이 없습니다. 로그인이 필요합니다.');
+        alert('로그인이 필요합니다.');
+        onLogout();
+        return;
+      }
+
       const params: any = {
         page: currentPage,
         size: 20,
@@ -681,7 +1027,12 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         params.search = searchTerm;
       }
 
-      if (statusFilter !== 'all') {
+      // 정렬 로직
+      if (statusFilter === null) {
+        params.sort_by = 'recent_checkin';
+      } else if (statusFilter === 'all') {
+        params.sort_by = '-member_id';
+      } else {
         params.status = statusFilter;
       }
 
@@ -690,12 +1041,36 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       setMembers(response.members);
       setTotalMembers(response.total);
       setTotalPages(Math.ceil(response.total / response.size));
-    } catch (error) {
+    } catch (error: any) {
       console.error('회원 목록 조회 실패:', error);
-      alert('회원 목록을 불러오는데 실패했습니다.');
+      
+      if (error.response?.status === 401) {
+        alert('인증이 만료되었습니다. 다시 로그인해주세요.');
+        sessionStorage.removeItem('admin_token');
+        onLogout();
+      } else {
+        alert('회원 목록을 불러오는데 실패했습니다.');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const getDaysLeft = (endDateStr: string | null): number => {
+    if (!endDateStr) return Infinity;
+    
+    const endDate = new Date(endDateStr);
+    const today = new Date();
+    
+    // 날짜만 비교하기 위해 시간 초기화
+    endDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const timeDiff = endDate.getTime() - today.getTime();
+    // 만료일 당일(0)부터 카운트
+    const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    
+    return daysLeft;
   };
 
   useEffect(() => {
@@ -710,7 +1085,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   };
 
   const handleFilterChange = (newFilter: typeof statusFilter) => {
-    setStatusFilter(newFilter);
+    setStatusFilter(statusFilter === newFilter ? null : newFilter);
     setCurrentPage(1);
   };
 
@@ -734,19 +1109,34 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     return <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">활성</span>;
   };
 
+  const isItemExpiringSoon = (endDateStr: string | null): boolean => {
+    if (!endDateStr) return false;
+    
+    const endDate = new Date(endDateStr);
+    const today = new Date();
+    
+    // 날짜만 비교하기 위해 시간 초기화
+    endDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const timeDiff = endDate.getTime() - today.getTime();
+    const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    
+    // 0일 (오늘 만료) ~ 7일 (7일 뒤 만료) 사이
+    return daysLeft >= 0 && daysLeft <= 7;
+  };
+
   const handleLogout = () => {
-    localStorage.removeItem('admin_token');
+    sessionStorage.removeItem('admin_token');
     onLogout();
   };
 
-  // ⭐ handleAddMember 수정
   const handleAddMember = () => {
     setIsAddingNew(true);
     setSelectedMember(null);
     setSelectedMemberIndex(0);
   };
 
-  // ⭐ handleRowClick 수정
   const handleRowClick = (member: any, index: number) => {
     setSelectedMember(member);
     setSelectedMemberIndex((currentPage - 1) * 20 + index + 1);
@@ -846,82 +1236,123 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {/* 테이블 */}
-      <main className="flex-1 overflow-auto p-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원번호</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">전화번호</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원권</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">시작일</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">종료일</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+<main className="flex-1 overflow-auto p-6">
+  <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원번호</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">전화번호</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원권</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">락커</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원복</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {loading ? (
+            <tr>
+              <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-3">로딩 중...</span>
+                </div>
+              </td>
+            </tr>
+          ) : members.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                회원이 없습니다.
+              </td>
+            </tr>
+          ) : (
+            members.map((member, index) => {
+              // 🌟 각 항목의 남은 날짜 계산
+              const membershipDaysLeft = getDaysLeft(member.membership_end_date);
+              const lockerDaysLeft = getDaysLeft(member.locker_end_date);
+              const uniformDaysLeft = getDaysLeft(member.uniform_end_date);
+
+              return (
+                <tr
+                  key={member.member_rank}
+                  onClick={() => handleRowClick(member, index)}
+                  className={`hover:bg-blue-50 transition-colors cursor-pointer ${
+                    selectedMember?.member_rank === member.member_rank ? 'bg-blue-100' : ''
+                  }`}
+                >
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                    {member.member_rank}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                    {member.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {member.phone_number}
+                  </td>
+                  
+                  {/* ⭐ 회원권 (상태별 로직) */}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {!member.is_active ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">
+                        비활성
+                      </span>
+                    ) : membershipDaysLeft < 0 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">
+                        만료
+                      </span>
+                    ) : membershipDaysLeft <= 7 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">
+                        곧 만료 ({membershipDaysLeft}일)
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-semibold">
+                        {member.membership_type || '-'}
+                      </span>
+                    )}
+                  </td>
+                  
+                  {/* ⭐ 락커 (상태별 로직) */}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {!member.locker_type || lockerDaysLeft < 0 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">
+                        미선택
+                      </span>
+                    ) : lockerDaysLeft <= 7 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">
+                        곧 만료 ({lockerDaysLeft}일)
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-semibold">
+                        {member.locker_type}
+                      </span>
+                    )}
+                  </td>
+                  
+                  {/* ⭐ 회원복 (상태별 로직) */}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {!member.uniform_type || uniformDaysLeft < 0 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">
+                        미선택
+                      </span>
+                    ) : uniformDaysLeft <= 7 ? (
+                      <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">
+                        곧 만료 ({uniformDaysLeft}일)
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded font-semibold">
+                        {member.uniform_type}
+                      </span>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                      <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                        <span className="ml-3">로딩 중...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : members.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                      회원이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  members.map((member, index) => (
-                    <tr
-                      key={member.member_id} 
-                      onClick={() => handleRowClick(member, index)}
-                      className={`hover:bg-blue-50 transition-colors cursor-pointer ${
-                        selectedMember?.member_id === member.member_id ? 'bg-blue-100' : ''
-                      }`}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
-                        {(currentPage - 1) * 20 + index + 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                        {member.name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {member.phone_number}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
-                          {member.membership_type || '-'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {member.membership_start_date 
-                          ? new Date(member.membership_start_date).toLocaleDateString('ko-KR')
-                          : '-'
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {member.membership_end_date 
-                          ? new Date(member.membership_end_date).toLocaleDateString('ko-KR')
-                          : '-'
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {getMemberStatus(member)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
         {/* 페이지네이션 */}
         {!loading && totalPages > 1 && (
@@ -996,7 +1427,7 @@ export default function AdminApp() {
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('admin_token');
+    const token = sessionStorage.getItem('admin_token');
     if (token) {
       setAuthed(true);
     }
