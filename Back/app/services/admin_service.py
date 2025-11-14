@@ -124,7 +124,13 @@ class AdminService:
         phone_number: str,
         membership_type: str,
         membership_start_date: str,
-        membership_end_date: str
+        membership_end_date: str,
+        locker_type: Optional[str] = None,
+        locker_start_date: Optional[str] = None,
+        locker_end_date: Optional[str] = None,
+        uniform_type: Optional[str] = None,
+        uniform_start_date: Optional[str] = None,
+        uniform_end_date: Optional[str] = None
     ) -> Dict:
         """회원 추가"""
         existing = self.member_repo.get_member_by_phone(self.db, phone_number)
@@ -134,23 +140,35 @@ class AdminService:
                 detail="이미 등록된 전화번호입니다."
             )
 
-        if membership_type not in ['3개월', '6개월', '1년']:
+        if membership_type not in ['1개월', '3개월', '6개월', '1년']:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="회원권 종류는 3개월, 6개월, 1년 중 하나여야 합니다."
+                detail="회원권 종류는 1개월, 3개월, 6개월, 1년 중 하나여야 합니다."
             )
 
         try:
+            # ⭐ SQL 수정 - 락커/회원복 컬럼 포함
             sql = """
-            INSERT INTO members (name, phone, membership_type, start_date, end_date, is_active, created_at)
-            VALUES (%s, %s, %s, %s, %s, TRUE, NOW())
+            INSERT INTO members (
+                name, phone, membership_type, start_date, end_date,
+                locker_type, locker_start_date, locker_end_date,
+                uniform_type, uniform_start_date, uniform_end_date,
+                is_active, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
             """
             self.db.execute(sql, (
                 name,
                 phone_number,
                 membership_type,
                 membership_start_date,
-                membership_end_date
+                membership_end_date,
+                locker_type,  # ⭐ 추가
+                locker_start_date,  # ⭐ 추가
+                locker_end_date,  # ⭐ 추가
+                uniform_type,  # ⭐ 추가
+                uniform_start_date,  # ⭐ 추가
+                uniform_end_date  # ⭐ 추가
             ))
             self.db.connection.commit()
             
@@ -164,6 +182,7 @@ class AdminService:
             }
         except Exception as e:
             self.db.connection.rollback()
+            print(f"❌ 회원 추가 실패: {str(e)}")  # ⭐ 디버깅
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"회원 추가 실패: {str(e)}"
@@ -176,7 +195,13 @@ class AdminService:
         phone_number: Optional[str] = None,
         membership_type: Optional[str] = None,
         membership_start_date: Optional[str] = None,
-        membership_end_date: Optional[str] = None
+        membership_end_date: Optional[str] = None,
+        locker_type: Optional[str] = None,
+        locker_start_date: Optional[str] = None,
+        locker_end_date: Optional[str] = None,
+        uniform_type: Optional[str] = None,
+        uniform_start_date: Optional[str] = None,
+        uniform_end_date: Optional[str] = None
     ) -> Dict:
         """회원 정보 수정"""
         member = self.member_repo.get_member_by_id(self.db, member_id)
@@ -194,32 +219,81 @@ class AdminService:
                     detail="이미 사용 중인 전화번호입니다."
                 )
 
-        if membership_type and membership_type not in ['3개월', '6개월', '1년']:
+        if membership_type and membership_type not in ['1개월', '3개월', '6개월', '1년']:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="회원권 종류는 3개월, 6개월, 1년 중 하나여야 합니다."
+                detail="회원권 종류는 1개월, 3개월, 6개월, 1년 중 하나여야 합니다."
             )
 
-        update_data = {}
+        # UPDATE SQL 구성
+        update_fields = []
+        update_values = []
+        
         if name is not None:
-            update_data['name'] = name
+            update_fields.append("name = %s")
+            update_values.append(name)
         if phone_number is not None:
-            update_data['phone_number'] = phone_number
+            update_fields.append("phone = %s")
+            update_values.append(phone_number)
         if membership_type is not None:
-            update_data['membership_type'] = membership_type
+            update_fields.append("membership_type = %s")
+            update_values.append(membership_type)
         if membership_start_date is not None:
-            update_data['membership_start_date'] = membership_start_date
+            update_fields.append("start_date = %s")
+            update_values.append(membership_start_date)
         if membership_end_date is not None:
-            update_data['membership_end_date'] = membership_end_date
+            update_fields.append("end_date = %s")
+            update_values.append(membership_end_date)
+        
+        # ⭐ 락커 정보 - None도 업데이트 (선택 해제 처리)
+        # locker_type이 키에 있으면 (None이어도) 업데이트
+        import inspect
+        frame = inspect.currentframe()
+        args_info = inspect.getargvalues(frame)
+        
+        # 간단한 방법: kwargs 사용
+        # locker_type이 전달되었는지 확인 (None이어도 업데이트)
+        update_fields.append("locker_type = %s")
+        update_values.append(locker_type)
+        update_fields.append("locker_start_date = %s")
+        update_values.append(locker_start_date)
+        update_fields.append("locker_end_date = %s")
+        update_values.append(locker_end_date)
+        
+        # ⭐ 회원복 정보 - None도 업데이트 (선택 해제 처리)
+        update_fields.append("uniform_type = %s")
+        update_values.append(uniform_type)
+        update_fields.append("uniform_start_date = %s")
+        update_values.append(uniform_start_date)
+        update_fields.append("uniform_end_date = %s")
+        update_values.append(uniform_end_date)
+
+        if not update_fields:
+            return {
+                "status": "success",
+                "message": "변경사항이 없습니다.",
+                "member": member
+            }
 
         try:
-            updated_member = self.member_repo.update_member(self.db, member_id, update_data)
+            sql = f"UPDATE members SET {', '.join(update_fields)} WHERE id = %s"
+            update_values.append(member_id)
+            
+            print(f"🔧 UPDATE SQL: {sql}")
+            print(f"🔧 VALUES: {update_values}")
+            
+            self.db.execute(sql, tuple(update_values))
+            self.db.connection.commit()
+            
+            updated_member = self.member_repo.get_member_by_id(self.db, member_id)
             return {
                 "status": "success",
                 "message": "회원 정보가 수정되었습니다.",
                 "member": updated_member
             }
         except Exception as e:
+            self.db.connection.rollback()
+            print(f"❌ 회원 수정 실패: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"회원 정보 수정 실패: {str(e)}"

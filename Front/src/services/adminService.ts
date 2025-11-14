@@ -12,13 +12,33 @@ const client = axios.create({
 // 요청 인터셉터: 토큰 자동 추가
 client.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('admin_token');
+    const token = sessionStorage.getItem('admin_token');
+    console.log('🔑 [Interceptor] 토큰:', token ? '있음' : '없음'); // ⭐ 디버깅
+    console.log('📡 [Interceptor] 요청 URL:', config.url); // ⭐ 디버깅
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('✅ [Interceptor] Authorization 헤더 추가'); // ⭐ 디버깅
+    } else {
+      console.error('❌ [Interceptor] 토큰 없음!'); // ⭐ 디버깅
     }
     return config;
   },
   (error) => {
+    console.error('❌ [Interceptor] 요청 에러:', error);
+    return Promise.reject(error);
+  }
+);
+
+// ⭐ 응답 인터셉터 추가 (401 에러 자동 처리)
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      console.error('❌ 401 Unauthorized - 토큰 만료 또는 유효하지 않음');
+      sessionStorage.removeItem('admin_token');
+      window.location.href = '/admin'; // 로그인 페이지로 리다이렉트
+    }
     return Promise.reject(error);
   }
 );
@@ -36,8 +56,11 @@ export const adminService = {
     size?: number;
     search?: string;
     status?: string;
+    sort_by?: string;
   }) => {
+    console.log('📞 [getMembers] 호출, params:', params); // ⭐ 디버깅
     const response = await client.get('/admin/members', { params });
+    console.log('✅ [getMembers] 응답 성공'); // ⭐ 디버깅
     return response.data;
   },
 
