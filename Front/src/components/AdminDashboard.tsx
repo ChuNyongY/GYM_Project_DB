@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { adminService } from "../services/adminService";
 import MemberDrawer from "./MemberDrawer";
+import logoImage from "../assets/logo.png";
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -21,7 +22,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   // 탭 상태 관리
   const [selectedTabs, setSelectedTabs] = useState<string[]>(["전체"]);
-  const [selectedGender, setSelectedGender] = useState<"남" | "여" | null>(null);
+  const [selectedGender, setSelectedGender] = useState<"M" | "F" | null>(null);
 
   const formatTime = (dateStr: string | null) => {
   if (!dateStr) return null;
@@ -35,6 +36,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   // 탭 목록 정의
   const tabList = [
+    { key: "전체", label: "전체" },
     { key: "회원번호", label: "회원번호" },
     { key: "남", label: "남" },
     { key: "여", label: "여" },
@@ -44,35 +46,77 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { key: "회원복", label: "회원복" },
     { key: "활성", label: "활성" },
     { key: "비활성", label: "비활성" },
-    { key: "전체", label: "전체" },
   ];
 
   // 탭 클릭 핸들러
   const handleTabClick = (key: string) => {
-    if (key === "남" || key === "여") {
-      setSelectedGender((prev) => (prev === key ? null : (key as "남" | "여")));
-    } else {
+    if (key === "전체") {
+      // 전체 버튼은 항상 단독 선택
+      setSelectedTabs(["전체"]);
+      setSelectedGender(null);
+      setCurrentPage(1);
+    } else if (key === "회원번호") {
+      // 회원번호 버튼 토글 (단독)
+      if (selectedTabs.includes("회원번호")) {
+        setSelectedTabs(["전체"]);
+      } else {
+        setSelectedTabs(["회원번호"]);
+      }
+      setSelectedGender(null);
+      setCurrentPage(1);
+    } else if (key === "남" || key === "여") {
+      // 성별 토글 ('남' -> 'M', '여' -> 'F') - 단독 선택
+      const genderValue = key === "남" ? "M" : "F";
+      if (selectedGender === genderValue) {
+        setSelectedGender(null);
+      } else {
+        setSelectedGender(genderValue as "M" | "F");
+      }
+      setCurrentPage(1);
+    } else if (key === "활성" || key === "비활성") {
+      // 활성/비활성 상호 배제 (단독 선택)
       setSelectedTabs((prev) => {
-        // PT권/회원권 동시 선택 방지
-        let newTabs = prev;
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "활성" && k !== "비활성");
         if (prev.includes(key)) {
-          // 이미 선택된 탭이면 해제
-          newTabs = prev.filter((k) => k !== key);
+          // 이미 선택되어 있으면 해제
+          return filtered.length === 0 ? ["전체"] : filtered;
         } else {
-          if (key === "전체") {
-            newTabs = ["전체"];
-          } else {
-            newTabs = prev.filter((k) => k !== "전체").concat(key);
-          }
+          // 새로 선택
+          return [...filtered, key];
         }
-        // PT권/회원권 상호 배제
-        if (key === "PT권" && newTabs.includes("PT권") && newTabs.includes("회원권")) {
-          newTabs = newTabs.filter((k) => k !== "회원권");
-        } else if (key === "회원권" && newTabs.includes("PT권") && newTabs.includes("회원권")) {
-          newTabs = newTabs.filter((k) => k !== "PT권");
-        }
-        return newTabs;
       });
+      setCurrentPage(1);
+    } else if (key === "회원권") {
+      // 회원권 토글 (PT권과 상호 배제, 다른 필터와는 중복 가능)
+      setSelectedTabs((prev) => {
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "PT권");
+        if (prev.includes(key)) {
+          // 이미 선택되어 있으면 해제
+          const result = filtered.filter((k) => k !== key);
+          return result.length === 0 ? ["전체"] : result;
+        } else {
+          // 새로 선택
+          return [...filtered, key];
+        }
+      });
+      setCurrentPage(1);
+    } else if (key === "라커룸" || key === "회원복") {
+      // 라커룸/회원복 토글 (다른 필터와 중복 가능)
+      setSelectedTabs((prev) => {
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호");
+        if (prev.includes(key)) {
+          // 이미 선택되어 있으면 해제
+          const result = filtered.filter((k) => k !== key);
+          return result.length === 0 ? ["전체"] : result;
+        } else {
+          // 새로 선택
+          return [...filtered, key];
+        }
+      });
+      setCurrentPage(1);
+    } else if (key === "PT권") {
+      // PT권 버튼 (껍데기만, 아무 동작 없음)
+      setCurrentPage(1);
     }
   };
 
@@ -92,18 +136,61 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       if (searchTerm) {
         params.search = searchTerm;
       }
-      if (statusFilter === null) {
+      
+      console.log('🎯 selectedTabs:', selectedTabs);
+      console.log('🎯 selectedGender:', selectedGender);
+      
+      // 정렬 및 필터 로직 (중복 필터 가능)
+      if (selectedTabs.includes("회원번호")) {
+        params.sort_by = 'member_rank_asc';
+      } else if (selectedTabs.includes("전체")) {
+        params.sort_by = 'member_rank_desc';
+      } else if (statusFilter === null) {
         params.sort_by = 'recent_checkin';
       } else if (statusFilter === 'all') {
-        params.sort_by = '-member_id';
+        params.sort_by = 'member_rank_desc';
       } else {
         params.status = statusFilter;
       }
+
+      // 회원권 정렬
+      if (selectedTabs.includes("회원권")) {
+        console.log('✅ 회원권 필터 적용');
+        params.sort_by = 'membership_type_asc';
+      }
+
+      // 라커룸 필터 및 정렬
+      if (selectedTabs.includes("라커룸")) {
+        console.log('✅ 라커룸 필터 적용');
+        params.locker_filter = true;
+        params.sort_by = 'locker_type_asc';
+      }
+
+      // 회원복 필터 및 정렬
+      if (selectedTabs.includes("회원복")) {
+        console.log('✅ 회원복 필터 적용');
+        params.uniform_filter = true;
+        params.sort_by = 'uniform_type_asc';
+      }
+
+      // 활성/비활성 필터
+      if (selectedTabs.includes("활성")) {
+        params.checkin_status = 'active';
+      } else if (selectedTabs.includes("비활성")) {
+        params.checkin_status = 'inactive';
+      }
+      
+      // 성별 필터
       if (selectedGender) {
         params.gender = selectedGender;
       }
+      
+      console.log('📤 최종 요청 파라미터:', params);
       const response = await adminService.getMembers(params);
-      setMembers(response.members);
+      console.log('📥 응답 데이터:', response);
+      console.log('📊 회원 수:', response.members?.length, '/ 전체:', response.total);
+      
+      setMembers([...response.members]); // 강제 새 배열 생성
       setTotalMembers(response.total);
       setTotalPages(Math.ceil(response.total / response.size));
     } catch (error: any) {
@@ -133,7 +220,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   useEffect(() => {
     fetchMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, statusFilter]);
+  }, [currentPage, statusFilter, selectedTabs, selectedGender]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,48 +272,42 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   // --- 실제 JSX 반환부 전체 ---
   return (
     <div className="h-screen flex flex-col bg-gray-50 relative">
-      {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">헬스장 관리 시스템</h1>
-            <p className="text-sm text-gray-500 mt-0.5">총 {totalMembers}명의 회원</p>
-          </div>
-          <button 
-            onClick={handleLogout} 
-            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-          >
-            로그아웃
-          </button>
-        </div>
-      </header>
-
-      {/* 탭 버튼 영역 */}
-      <div className="bg-white border-b border-gray-200 px-6 pt-4 pb-2">
-        <div className="flex flex-wrap gap-2">
+      {/* 탭 버튼 영역 - 윈도우 탭 스타일 */}
+      <div className="bg-gray-100 border-b border-gray-300 px-6 pt-2 pb-0 flex justify-between">
+        <div className="flex gap-0.5 items-end">
           {tabList.map((tab) => {
             // 성별 탭은 단일 선택, 나머지는 중복 선택
             const isGender = tab.key === "남" || tab.key === "여";
+            const genderValue = tab.key === "남" ? "M" : tab.key === "여" ? "F" : null;
             const isSelected = isGender
-              ? selectedGender === tab.key
+              ? selectedGender === genderValue
               : selectedTabs.includes(tab.key);
             return (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => handleTabClick(tab.key)}
-                className={`px-4 py-2 rounded-lg border transition-colors font-semibold text-sm
+                className={`px-5 py-2.5 font-medium text-sm border-t border-l border-r transition-all relative
                   ${isSelected
-                    ? isGender
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-green-600 text-white border-green-600'
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}
+                    ? 'bg-white text-gray-800 border-gray-300 border-b-0 z-10 -mb-px'
+                    : 'bg-gray-200 text-gray-600 border-gray-400 hover:bg-gray-300 border-b border-gray-300'}
+                  ${tab.key === tabList[0].key ? 'rounded-tl-lg' : ''}
+                  ${tab.key === tabList[tabList.length - 1].key ? 'rounded-tr-lg' : ''}
                 `}
               >
                 {tab.label}
-              </button>
-            );
-          })}
+            </button>
+          );
+        })}
+        </div>
+        <div className="flex items-center">
+          <button 
+            onClick={handleLogout} 
+            className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-sm mr-2"
+            style={{marginTop: '8px', marginBottom: '8px'}}
+          >
+            로그아웃
+          </button>
         </div>
       </div>
 
@@ -256,22 +337,22 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원번호</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">성별</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">전화번호</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원권</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">락커룸</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">회원복</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">출입기록</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">퇴장기록</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">회원번호</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">이름</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20">성별</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">전화번호</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">회원권</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">락커룸</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-28">회원복</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">출입기록</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">퇴장기록</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20">상태</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                       <div className="flex items-center justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                         <span className="ml-3">로딩 중...</span>
@@ -280,8 +361,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   </tr>
                 ) : members.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                      회원이 없습니다.
+                    <td colSpan={10} className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <p className="text-lg font-medium text-gray-500">회원이 없습니다</p>
+                        <p className="text-sm text-gray-400 mt-1">새로운 회원을 추가해보세요</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -289,20 +376,31 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     const membershipDaysLeft = getDaysLeft(member.membership_end_date);
                     const lockerDaysLeft = getDaysLeft(member.locker_end_date);
                     const uniformDaysLeft = getDaysLeft(member.uniform_end_date);
+                    
+                    // 표시용 회원번호 계산
+                    let displayRank;
+                    if (selectedTabs.includes("회원번호")) {
+                      // 회원번호 버튼: 오름차순이므로 페이지 순서대로 1, 2, 3, 4...
+                      displayRank = (currentPage - 1) * 20 + index + 1;
+                    } else {
+                      // 전체 버튼 (기본): 내림차순이므로 큰 숫자부터 (5, 4, 3, 2, 1)
+                      displayRank = totalMembers - ((currentPage - 1) * 20 + index);
+                    }
+                    
                     return (
                       <tr
-                        key={member.member_rank}
+                        key={member.member_id}
                         onClick={() => handleRowClick(member, index)}
                         className={`hover:bg-blue-50 transition-colors cursor-pointer ${
-                          selectedMember?.member_rank === member.member_rank ? 'bg-blue-100' : ''
+                          selectedMember?.member_id === member.member_id ? 'bg-blue-100' : ''
                         }`}
                       >
                         {/* 회원번호 */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm font-mono">{member.member_rank}</td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-mono text-center">{displayRank}</td>
                         {/* 이름 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{member.name}</td>
                         {/* 성별 */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {member.gender === 'M' ? (
                             <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-semibold">
                               남
@@ -320,7 +418,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         {/* 전화번호 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{member.phone_number}</td>
                         {/* 회원권 (PT권 포함) */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {member.membership_type?.startsWith('PT') ? (
                             <span className="inline-block px-2 py-1 text-xs bg-pink-100 text-pink-700 rounded font-semibold">
                               {member.membership_type}
@@ -334,7 +432,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
                         {/* 라커룸 (번호/기간) */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {member.locker_number ? (
                             <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-semibold">
                               {member.locker_type}{member.locker_number ? ` (${member.locker_number}번)` : ' (미배정)'}
@@ -344,7 +442,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
                         {/* 회원복 */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {member.uniform_type ? (
                             <span className="inline-block px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded font-semibold">
                               {member.uniform_type}
@@ -354,8 +452,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
                         
-                        {/* 출입기록 (퇴장했으면 - 표시) */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        {/* 출입기록 (출입중일 때만 표시) */}
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {member.is_active && member.checkin_time ? (
                             <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-700 rounded font-semibold">
                               {formatTime(member.checkin_time)}
@@ -366,7 +464,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         </td>
 
                         {/* 퇴장기록 (퇴장했을 때만 표시) */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                           {!member.is_active && member.checkout_time ? (
                             <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">
                               {formatTime(member.checkout_time)}
@@ -376,17 +474,21 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
 
-                        {/* 상태 (초록원 / 빨간원) */}
+                        {/* 상태 (출입/퇴장 기록 없으면 - 표시) */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm">
-                          <div className="flex items-center justify-center"> {/* 가운데 정렬 추가 */}
-                            {member.is_active ? (
-                              <div className="group relative flex items-center" title="출입중">
-                                <div className="w-3 h-3 rounded-full bg-green-500 shadow-md animate-pulse"></div>
-                              </div>
+                          <div className="flex items-center justify-center">
+                            {member.checkin_time || member.checkout_time ? (
+                              member.is_active ? (
+                                <div className="group relative flex items-center" title="출입중">
+                                  <div className="w-3 h-3 rounded-full bg-green-500 shadow-md animate-pulse"></div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center" title="퇴장">
+                                  <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
+                                </div>
+                              )
                             ) : (
-                              <div className="flex items-center" title="퇴장">
-                                <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
-                              </div>
+                              <span className="text-gray-400">-</span>
                             )}
                           </div>
                         </td>
