@@ -29,12 +29,25 @@ async def kiosk_checkin(
         raise HTTPException(status_code=400, detail="숫자 4자리를 입력해주세요.")
 
     try:
+        # 먼저 삭제된 회원인지 확인
+        deleted_check_sql = """
+        SELECT member_id, name FROM deleted_members
+        WHERE RIGHT(phone_number, 4) = %s
+        """
+        db.execute(deleted_check_sql, (phone_tail,))
+        deleted_member = db.fetchone()
+        if deleted_member:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"휴면회원입니다. 카운터에 문의하세요."
+            )
+        
         # 후보 id가 있으면 해당 회원으로 체크인
         if candidate_id:
             sql = """
             SELECT member_id, name, phone_number, membership_end_date, is_active
             FROM members
-            WHERE member_id = %s AND RIGHT(phone_number, 4) = %s AND is_active = TRUE
+            WHERE member_id = %s AND RIGHT(phone_number, 4) = %s
             """
             db.execute(sql, (candidate_id, phone_tail))
             member = db.fetchone()
@@ -45,7 +58,7 @@ async def kiosk_checkin(
             sql = """
             SELECT member_id, name, phone_number, membership_end_date, is_active
             FROM members
-            WHERE RIGHT(phone_number, 4) = %s AND is_active = TRUE
+            WHERE RIGHT(phone_number, 4) = %s
             """
             db.execute(sql, (phone_tail,))
             members = db.fetchall()
@@ -55,50 +68,19 @@ async def kiosk_checkin(
                 # 동명이인 후보 리스트 반환
                 candidates = [
                     {
-                        "id": m["member_id"],
+                        "member_id": m["member_id"],
                         "name": m["name"],
-                        "phone_masked": m["phone_number"][:3] + "-****-" + m["phone_number"][-4:]
+                        "phone_number": m["phone_number"],
+                        "is_active": m["is_active"]
                     }
                     for m in members
                 ]
-                return {"status": "select", "candidates": candidates}
+                return {"status": "duplicate", "members": candidates}
             member = members[0]
 
-        # 만료 체크
-        if member['membership_end_date']:
-            end_date = member['membership_end_date']
-            if isinstance(end_date, str):
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            elif hasattr(end_date, 'date'):
-                end_date = end_date.date() if callable(end_date.date) else end_date
-            if end_date < datetime.now().date():
-                raise HTTPException(status_code=403, detail=f"{member['name']}님, 만료되었습니다.")
-
-        # 1. 출입 로그 저장
-        checkin_sql = "INSERT INTO checkins (member_id, checkin_time) VALUES (%s, NOW())"
-        db.execute(checkin_sql, (member['member_id'],))
-
-        # 2. 멤버 상태 업데이트 (관리자 페이지 실시간 반영용)
-        update_sql = "UPDATE members SET checkin_time = NOW() WHERE member_id = %s"
-        db.execute(update_sql, (member['member_id'],))
-
-        db.connection.commit()
-
-        # 남은 일수 계산
-        days_left = None
-        if member['membership_end_date']:
-            end_date = member['membership_end_date']
-            if isinstance(end_date, str):
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            elif hasattr(end_date, 'date'):
-                end_date = end_date.date() if callable(end_date.date) else end_date
-            days_left = (end_date - datetime.now().date()).days
-
-        return {
-            "status": "success",
-            "message": f"{member['name']}님 환영합니다!",
-            "member": {"id": member['member_id'], "name": member['name'], "days_left": days_left}
-        }
+        # CheckinService를 사용하여 체크인 처리
+        checkin_service = CheckinService(db)
+        return checkin_service.process_checkin(member['member_id'])
 
     except HTTPException:
         raise

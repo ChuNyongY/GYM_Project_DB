@@ -72,7 +72,7 @@ class MemberRepository:
         """
         
         cursor.execute(sql, (
-            member_rank, member_data.name, member_data.phone_number, member_data.gender,
+            member_rank, member_data.name, member_data.phone_number, member_data.gender.value if member_data.gender else None,
             member_data.membership_type, member_data.membership_start_date, membership_end_date,
             locker_number, member_data.locker_type, member_data.locker_start_date, member_data.locker_end_date,
             member_data.uniform_type, member_data.uniform_start_date, member_data.uniform_end_date
@@ -100,7 +100,7 @@ class MemberRepository:
         return cursor.fetchone()
 
     @staticmethod
-    def get_member_by_phone(cursor: DictCursor, phone_number: str) -> Optional[dict]:
+    def get_member_by_phone(cursor: DictCursor, phone_number: str, check_all: bool = False) -> Optional[dict]:
         """전화번호로 조회"""
         # [수정] phone -> phone_number
         sql = """
@@ -110,8 +110,12 @@ class MemberRepository:
             locker_number, locker_type, locker_start_date, locker_end_date,
             uniform_type, uniform_start_date, uniform_end_date, is_active, created_at
         FROM members
-        WHERE phone_number = %s AND is_active = TRUE
+        WHERE phone_number = %s
         """
+        # check_all이 False면 활성 회원만, True면 모든 회원 조회
+        if not check_all:
+            sql += " AND is_active = TRUE"
+        
         cursor.execute(sql, (phone_number,))
         return cursor.fetchone()
 
@@ -123,7 +127,8 @@ class MemberRepository:
             member_id, member_rank, name, phone_number, gender,
             membership_type, membership_start_date, membership_end_date,
             locker_number, locker_type, locker_start_date, locker_end_date,
-            uniform_type, uniform_start_date, uniform_end_date, is_active
+            uniform_type, uniform_start_date, uniform_end_date, is_active,
+            checkin_time, checkout_time
         FROM members
         WHERE RIGHT(phone_number, 4) = %s
         ORDER BY name ASC
@@ -165,6 +170,10 @@ class MemberRepository:
             # 매핑된 컬럼명이 있거나, 락커/유니폼 관련 컬럼이면 사용
             db_col = column_mapping.get(key, key)
             
+            # Enum 타입 처리 (gender 등)
+            if hasattr(value, 'value'):
+                value = value.value
+            
             # 값 유효성 체크 (None이어도 업데이트해야 하는 경우 등)
             if key in column_mapping or key.startswith('locker_') or key.startswith('uniform_') or key == 'membership_type':
                  update_fields.append(f"{db_col} = %s")
@@ -196,10 +205,58 @@ class MemberRepository:
 
     @staticmethod
     def soft_delete_member(cursor: DictCursor, member_id: int) -> bool:
-        # [수정] id -> member_id
-        sql = "UPDATE members SET is_active = FALSE WHERE member_id = %s"
+        """회원 소프트 삭제 (deleted_members로 이동)"""
         try:
-            result = cursor.execute(sql, (member_id,))
+            # 1. 회원 정보 조회 (is_active 상관없이)
+            select_sql = """
+            SELECT 
+                member_id, member_rank, name, phone_number, gender,
+                membership_type, membership_start_date, membership_end_date,
+                locker_number, locker_type, locker_start_date, locker_end_date,
+                uniform_type, uniform_start_date, uniform_end_date, created_at, is_active
+            FROM members
+            WHERE member_id = %s
+            """
+            cursor.execute(select_sql, (member_id,))
+            member = cursor.fetchone()
+            
+            if not member:
+                return False
+            
+            # 이미 비활성화된 회원인지 확인
+            if not member['is_active']:
+                # 이미 deleted_members에 있는지 확인
+                check_sql = "SELECT member_id FROM deleted_members WHERE member_id = %s"
+                cursor.execute(check_sql, (member_id,))
+                if cursor.fetchone():
+                    return True  # 이미 삭제 처리됨
+            
+            # 2. deleted_members에 삽입
+            insert_sql = """
+            INSERT INTO deleted_members (
+                member_id, member_rank, name, phone_number, gender,
+                membership_type, membership_start_date, membership_end_date,
+                locker_number, locker_type, locker_start_date, locker_end_date,
+                uniform_type, uniform_start_date, uniform_end_date,
+                created_at, deleted_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE deleted_at = NOW()
+            """
+            cursor.execute(insert_sql, (
+                member['member_id'], member['member_rank'], member['name'],
+                member['phone_number'], member['gender'],
+                member['membership_type'], member['membership_start_date'],
+                member['membership_end_date'], member['locker_number'],
+                member['locker_type'], member['locker_start_date'],
+                member['locker_end_date'], member['uniform_type'],
+                member['uniform_start_date'], member['uniform_end_date'],
+                member['created_at']
+            ))
+            
+            # 3. members 테이블에서 is_active를 FALSE로 변경
+            update_sql = "UPDATE members SET is_active = FALSE WHERE member_id = %s"
+            result = cursor.execute(update_sql, (member_id,))
+            
             cursor.connection.commit()
             return result > 0
         except Exception as e:
@@ -220,12 +277,14 @@ class MemberRepository:
         locker_filter: bool = False,
         uniform_filter: bool = False
     ) -> Tuple[List[dict], int]:
-        """회원 목록 조회"""
-        where_conditions = []
+        """회원 목록 조회 (활성 회원만)"""
+        where_conditions = ["is_active = TRUE"]  # 활성 회원만 조회
+        print(f"🟢 [DEBUG] Initial where_conditions: {where_conditions}")
         
-        # 검색
+        # 검색 (공백 제거)
         if search:
-            where_conditions.append(f"(name LIKE '%{search}%' OR phone_number LIKE '%{search}%')")
+            search_clean = search.replace(" ", "")
+            where_conditions.append(f"(REPLACE(name, ' ', '') LIKE '%{search_clean}%' OR REPLACE(phone_number, ' ', '') LIKE '%{search_clean}%')")
         
         # 성별
         if gender:
@@ -254,6 +313,8 @@ class MemberRepository:
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 
         # 정렬 (단순화)
+        print(f"🔴 [DEBUG] Final where_clause: {where_clause}")
+        
         if sort_by == "member_rank_asc":
             order_clause = "member_id ASC"
         elif sort_by == "member_rank_desc":

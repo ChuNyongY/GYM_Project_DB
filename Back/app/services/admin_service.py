@@ -134,7 +134,7 @@ class AdminService:
                     (SELECT checkin_time FROM checkins WHERE member_id = m.member_id ORDER BY checkin_time DESC LIMIT 1) as last_checkin_time,
                     (SELECT checkout_time FROM checkins WHERE member_id = m.member_id ORDER BY checkin_time DESC LIMIT 1) as last_checkout_time
                 FROM members m
-                WHERE 1=1
+                WHERE m.is_active = TRUE
             """
             
             # 1. 검색 조건
@@ -231,7 +231,7 @@ class AdminService:
             members = self.db.fetchall()
             
             # 5. 전체 개수 조회
-            count_sql = "SELECT COUNT(*) as count FROM members m WHERE 1=1"
+            count_sql = "SELECT COUNT(*) as count FROM members m WHERE m.is_active = TRUE"
             count_params = []
             
             if search:
@@ -265,7 +265,7 @@ class AdminService:
                 # 프론트엔드 id 매핑
                 m['id'] = m['member_id']
 
-                # 회원번호 자동 계산 (DB값이 없으면)
+                # 회원순서 자동 계산 (DB값이 없으면)
                 if m['member_rank'] is None:
                     m['member_rank'] = (page - 1) * size + (i + 1)
 
@@ -309,10 +309,28 @@ class AdminService:
             )
 
     def create_member(self, **kwargs) -> Dict:
+        print(f"🟢 [DEBUG] create_member 호출됨, kwargs: {kwargs}")
+        
         phone_number = kwargs.get('phone_number')
-        existing = self.member_repo.get_member_by_phone(self.db, phone_number)
+        # [수정] 모든 회원(활성+비활성) 대상으로 중복 체크
+        existing = self.member_repo.get_member_by_phone(self.db, phone_number, check_all=True)
         if existing:
-            raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
+            if existing.get('is_active'):
+                raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
+            else:
+                # 비활성 회원 자동 영구 삭제 후 진행
+                member_id = existing.get('member_id')
+                print(f"🔵 [DEBUG] 비활성 회원 자동 삭제: member_id={member_id}")
+                
+                # deleted_members와 members에서 완전히 삭제
+                delete_sql1 = "DELETE FROM deleted_members WHERE member_id = %s"
+                self.db.execute(delete_sql1, (member_id,))
+                
+                delete_sql2 = "DELETE FROM members WHERE member_id = %s"
+                self.db.execute(delete_sql2, (member_id,))
+                self.db.connection.commit()
+                
+                print(f"🟢 [DEBUG] 비활성 회원 삭제 완료, 회원 추가 진행")
 
         if kwargs.get('locker_type') and not kwargs.get('locker_number'):
             kwargs['locker_number'] = self._get_available_locker_number()
@@ -323,16 +341,24 @@ class AdminService:
             placeholders = ', '.join(['%s'] * len(keys))
             sql = f"INSERT INTO members ({columns}, is_active, created_at) VALUES ({placeholders}, TRUE, NOW())"
             
+            print(f"🔵 [DEBUG] SQL: {sql}")
+            print(f"🔵 [DEBUG] Values: {tuple(kwargs.values())}")
+            
             self.db.execute(sql, tuple(kwargs.values()))
             self.db.connection.commit()
             
             member_id = self.db.lastrowid
+            print(f"🟢 [DEBUG] 회원 추가 성공, member_id: {member_id}")
+            
             return {
                 "status": "success",
                 "message": "회원이 추가되었습니다.",
                 "member": self.member_repo.get_member_by_id(self.db, member_id)
             }
         except Exception as e:
+            print(f"🔴 [ERROR] 회원 추가 실패: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.db.connection.rollback()
             raise HTTPException(status_code=500, detail=f"회원 추가 실패: {str(e)}")
 
@@ -379,12 +405,19 @@ class AdminService:
             raise HTTPException(status_code=500, detail=f"수정 실패: {str(e)}")
 
     def delete_member(self, member_id: int) -> Dict:
+        """회원 소프트 삭제 (deleted_members로 이동)"""
         try:
-            self.db.execute("DELETE FROM checkins WHERE member_id = %s", (member_id,))
-            sql = "DELETE FROM members WHERE member_id = %s"
-            self.db.execute(sql, (member_id,))
-            self.db.connection.commit()
-            return {"status": "success", "message": "삭제 완료", "member_id": member_id}
+            from ..repositories.member_repository import MemberRepository
+            
+            # MemberRepository의 soft_delete_member 사용
+            success = MemberRepository.soft_delete_member(self.db, member_id)
+            
+            if success:
+                return {"status": "success", "message": "회원이 삭제되었습니다. 최근 삭제 기록에서 복원할 수 있습니다.", "member_id": member_id}
+            else:
+                raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.connection.rollback()
             raise HTTPException(status_code=500, detail=f"삭제 실패: {str(e)}")

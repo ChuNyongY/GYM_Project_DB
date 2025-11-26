@@ -81,7 +81,11 @@ export default function UserApp() {
               setSuccessMessage(msg);
             }
           } catch (error: any) {
-            if (error?.response?.status === 400) {
+            if (error?.response?.status === 403) {
+              // 403 오류는 휴면 회원 - 더 이상 진행하지 않음
+              setErrorMessage(error?.response?.data?.detail || '휴면회원입니다. 카운터에 문의하세요.');
+              throw error; // 에러를 다시 던져서 tryCheckout 시도를 방지
+            } else if (error?.response?.status === 400) {
               // 400 오류는 예외가 아니라 정상 분기(입장 상태 → 퇴장 시도)
               await tryCheckout();
             } else {
@@ -103,26 +107,33 @@ export default function UserApp() {
             }
             setSuccessMessage(msg);
           } catch (error: any) {
-            // 400 오류(이미 퇴장 상태)는 정상 분기이므로 무시, 그 외만 예외 처리
-            if (error?.response?.status !== 400) {
+            if (error?.response?.status === 403) {
+              // 403 오류는 휴면 회원
+              setErrorMessage(error?.response?.data?.detail || '휴면회원입니다. 카운터에 문의하세요.');
+            } else if (error?.response?.status !== 400) {
+              // 400 오류(이미 퇴장 상태)는 정상 분기이므로 무시, 그 외만 예외 처리
               setErrorMessage('퇴장 처리에 실패했습니다.');
             }
           }
         };
-        if (member) {
-          if (member.is_active) {
-            await tryCheckout();
-          } else {
-            await tryCheckIn();
-          }
-        } else {
-          await tryCheckIn();
-        }
+        // 무조건 입장 시도, 400 에러 나면 자동으로 퇴장 시도, 403 에러는 즉시 중단
+        await tryCheckIn();
         setCandidates([]);
         setSelectedCandidateId(null);
       } else {
         // 2. 4자리 입력 후 후보 검색
-        const searchRes = await kioskService.searchByPhone(input);
+        let searchRes;
+        try {
+          searchRes = await kioskService.searchByPhone(input);
+        } catch (error: any) {
+          // 403 에러는 삭제된 회원(휴면 회원)
+          if (error?.response?.status === 403) {
+            setErrorMessage(error?.response?.data?.detail || '휴면회원입니다. 카운터에 문의하세요.');
+            return;
+          }
+          throw error; // 다른 에러는 외부 catch로
+        }
+        
         if (searchRes.status === 'not_found') {
           setErrorMessage('등록된 회원이 없습니다.');
           setCandidates([]);
@@ -155,7 +166,11 @@ export default function UserApp() {
                 setSuccessMessage(msg);
               }
             } catch (error: any) {
-              if (error?.response?.status === 400) {
+              if (error?.response?.status === 403) {
+                // 403 오류는 휴면 회원 - 더 이상 진행하지 않음
+                setErrorMessage(error?.response?.data?.detail || '휴면회원입니다. 카운터에 문의하세요.');
+                throw error; // 에러를 다시 던져서 tryCheckout 시도를 방지
+              } else if (error?.response?.status === 400) {
                 // 400 오류는 예외가 아니라 정상 분기(입장 상태 → 퇴장 시도)
                 await tryCheckout();
               } else {
@@ -177,17 +192,17 @@ export default function UserApp() {
               }
               setSuccessMessage(msg);
             } catch (error: any) {
-              // 400 오류(이미 퇴장 상태)는 정상 분기이므로 무시, 그 외만 예외 처리
-              if (error?.response?.status !== 400) {
+              if (error?.response?.status === 403) {
+                // 403 오류는 휴면 회원
+                setErrorMessage(error?.response?.data?.detail || '휴면회원입니다. 카운터에 문의하세요.');
+              } else if (error?.response?.status !== 400) {
+                // 400 오류(이미 퇴장 상태)는 정상 분기이므로 무시, 그 외만 예외 처리
                 setErrorMessage('퇴장 처리에 실패했습니다.');
               }
             }
           };
-          if (member.is_active) {
-            await tryCheckout();
-          } else {
-            await tryCheckIn();
-          }
+          // 무조건 입장 시도, 400 에러 나면 자동으로 퇴장 시도, 403 에러는 즉시 중단
+          await tryCheckIn();
           setCandidates([]);
           setSelectedCandidateId(null);
         }
@@ -215,10 +230,10 @@ export default function UserApp() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 overflow-hidden">
+    <div className="flex h-screen bg-gray-900">
       
        {/* 좌측: 이미지 + 유튜브 영상 */}
-      <div className="w-[60%] h-full relative flex flex-col overflow-hidden">
+      <div className="w-[60%] h-full relative flex flex-col">
 
         {/* 상단 배너 고정 */}
         <div className="w-full h-64 bg-gradient-to-r from-black via-gray-900 to-black flex items-center justify-center shrink-0 border-b-2 border-gray-800">
@@ -272,7 +287,7 @@ export default function UserApp() {
       </div>
 
       {/* 우측: 패널 */}
-      <div className="w-[40%] bg-white flex flex-col shadow-2xl relative overflow-y-auto">
+      <div className="w-[40%] bg-white flex flex-col shadow-2xl relative">
         {/* 성공 메시지 오버레이 */}
         {successMessage && (
           <div className="absolute inset-0 bg-green-500/95 backdrop-blur-sm z-50 flex items-center justify-center animate-pulse-once">
@@ -315,9 +330,6 @@ export default function UserApp() {
 
         {/* 입력 영역 및 동명이인 후보 선택 */}
         <div className="p-6 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200">
-          <label className="block text-sm font-semibold text-gray-700 mb-3">
-            회원번호를 터치하세요 (Please enter your ID)
-          </label>
           <div className="relative">
             <input
               value={input}
@@ -379,30 +391,6 @@ export default function UserApp() {
             disabled={loading}
             maxLength={4}
           />
-        </div>
-
-        {/* 하단 안내 */}
-        <div className="p-6 bg-gradient-to-b from-yellow-50 to-yellow-100 border-t-2 border-yellow-200">
-          <div className="bg-white border-2 border-yellow-300 rounded-xl p-4 shadow-sm">
-            <p className="font-bold text-gray-800 mb-2 text-sm flex items-center gap-2">
-              <span className="text-2xl">💡</span>
-              <span>헬스장 입장할 때 꼭!!! 해주세요.</span>
-            </p>
-            <div className="text-xs text-gray-700 space-y-1.5 ml-8">
-              <p className="flex items-center gap-2">
-                <span className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
-                회원님 휴대폰 끝 4자리 입력 (예: 1234)
-              </p>
-              <p className="flex items-center gap-2">
-                <span className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
-                확인 버튼 클릭 (F8 또는 Enter)
-              </p>
-              <p className="flex items-center gap-2">
-                <span className="w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">✓</span>
-                입장 완료!
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

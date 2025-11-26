@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { adminService } from "../services/adminService";
 import MemberDrawer from "./MemberDrawer";
-import logoImage from "../assets/logo.png";
+import DeletedMembers from "./DeletedMembers";
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -18,6 +18,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [showDeletedMembers, setShowDeletedMembers] = useState(false);
 
   // 탭 상태 관리
   const [selectedTabs, setSelectedTabs] = useState<string[]>(["전체"]);
@@ -36,7 +37,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   // 탭 목록 정의
   const tabList = [
     { key: "전체", label: "전체" },
-    { key: "회원번호", label: "회원번호" },
+    { key: "회원순서", label: "회원순서" },
     { key: "남", label: "남" },
     { key: "여", label: "여" },
     { key: "PT권", label: "PT권" },
@@ -45,21 +46,28 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { key: "회원복", label: "회원복" },
     { key: "활성", label: "활성" },
     { key: "비활성", label: "비활성" },
+    { key: "최근삭제", label: "최근 삭제 기록" },
   ];
 
   // 탭 클릭 핸들러
   const handleTabClick = (key: string) => {
+    if (key === "최근삭제") {
+      // 최근 삭제 기록 탭 클릭 시 별도 페이지 표시
+      setShowDeletedMembers(true);
+      return;
+    }
+    
     if (key === "전체") {
       // 전체 버튼은 항상 단독 선택
       setSelectedTabs(["전체"]);
       setSelectedGender(null);
       setCurrentPage(1);
-    } else if (key === "회원번호") {
-      // 회원번호 버튼 토글 (단독)
-      if (selectedTabs.includes("회원번호")) {
+    } else if (key === "회원순서") {
+      // 회원순서 버튼 토글 (단독)
+      if (selectedTabs.includes("회원순서")) {
         setSelectedTabs(["전체"]);
       } else {
-        setSelectedTabs(["회원번호"]);
+        setSelectedTabs(["회원순서"]);
       }
       setSelectedGender(null);
       setCurrentPage(1);
@@ -75,7 +83,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     } else if (key === "활성" || key === "비활성") {
       // 활성/비활성 상호 배제 (단독 선택)
       setSelectedTabs((prev) => {
-        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "활성" && k !== "비활성");
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원순서" && k !== "활성" && k !== "비활성");
         if (prev.includes(key)) {
           // 이미 선택되어 있으면 해제
           return filtered.length === 0 ? ["전체"] : filtered;
@@ -88,7 +96,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     } else if (key === "회원권") {
       // 회원권 토글 (PT권과 상호 배제, 다른 필터와는 중복 가능)
       setSelectedTabs((prev) => {
-        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "PT권");
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원순서" && k !== "PT권");
         if (prev.includes(key)) {
           // 이미 선택되어 있으면 해제
           const result = filtered.filter((k) => k !== key);
@@ -102,7 +110,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     } else if (key === "라커룸" || key === "회원복") {
       // 라커룸/회원복 토글 (다른 필터와 중복 가능)
       setSelectedTabs((prev) => {
-        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호");
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원순서");
         if (prev.includes(key)) {
           // 이미 선택되어 있으면 해제
           const result = filtered.filter((k) => k !== key);
@@ -116,7 +124,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     } else if (key === "PT권") {
       // PT권 토글 (회원권과 상호 배제, 다른 필터와는 중복 가능)
       setSelectedTabs((prev) => {
-        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "회원권");
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원순서" && k !== "회원권");
         if (prev.includes(key)) {
           // 이미 선택되어 있으면 해제
           const result = filtered.filter((k) => k !== key);
@@ -151,7 +159,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       console.log('🎯 selectedGender:', selectedGender);
       
       // 정렬 및 필터 로직 (중복 필터 가능)
-      if (selectedTabs.includes("회원번호")) {
+      if (selectedTabs.includes("회원순서")) {
         params.sort_by = 'member_rank_asc';
       } else if (selectedTabs.includes("전체")) {
         params.sort_by = 'member_rank_desc';
@@ -262,9 +270,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   };
 
   const handleRowClick = (member: any, index: number) => {
-    // 표시용 회원번호 계산
+    // 표시용 회원순서 계산
     let displayRank;
-    if (selectedTabs.includes("회원번호")) {
+    if (selectedTabs.includes("회원순서")) {
       displayRank = (currentPage - 1) * 20 + index + 1;
     } else {
       displayRank = totalMembers - ((currentPage - 1) * 20 + index);
@@ -301,7 +309,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   // --- 실제 JSX 반환부 전체 ---
   return (
-    <div className="h-screen flex flex-col bg-gray-50 relative">
+    <>
+      {showDeletedMembers ? (
+        <DeletedMembers onClose={() => setShowDeletedMembers(false)} />
+      ) : (
+    <div className="min-h-[100dvh] flex flex-col bg-gray-50 relative overflow-hidden">
       {/* 탭 버튼 영역 - 윈도우 탭 스타일 */}
       <div className="bg-gray-100 border-b border-gray-300 px-6 pt-2 pb-0 flex justify-between">
         <div className="flex gap-0.5 items-end">
@@ -367,9 +379,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">회원번호</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">회원순서</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">이름</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20">성별</th>
+                  <th className="px-2 py-3 text-left -translate-x-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-20">성별</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">전화번호</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">회원권</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">락커룸</th>
@@ -407,10 +419,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     const lockerDaysLeft = getDaysLeft(member.locker_end_date);
                     const uniformDaysLeft = getDaysLeft(member.uniform_end_date);
                     
-                    // 표시용 회원번호 계산
+                    // 표시용 회원순서 계산
                     let displayRank;
-                    if (selectedTabs.includes("회원번호")) {
-                      // 회원번호 버튼: 오름차순이므로 페이지 순서대로 1, 2, 3, 4...
+                    if (selectedTabs.includes("회원순서")) {
+                      // 회원순서 버튼: 오름차순이므로 페이지 순서대로 1, 2, 3, 4...
                       displayRank = (currentPage - 1) * 20 + index + 1;
                     } else {
                       // 전체 버튼 (기본): 내림차순이므로 큰 숫자부터 (5, 4, 3, 2, 1)
@@ -425,22 +437,22 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           selectedMember?.member_id === member.member_id ? 'bg-blue-100' : ''
                         }`}
                       >
-                        {/* 회원번호 */}
+                        {/* 회원순서 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-mono text-center">{displayRank}</td>
                         {/* 이름 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{member.name}</td>
                         {/* 성별 */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
+                        <td className="px-2 py-4 whitespace-nowrap -translate-x-3 text-sm text-center">
                           {member.gender === 'M' ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-semibold">
+                            <span className="inline-block transform -translate-x-8 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-semibold">
                               남
                             </span>
                           ) : member.gender === 'F' ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-pink-100 text-pink-700 rounded font-semibold">
+                            <span className="inline-block transform -translate-x-8 px-2 py-1 text-xs bg-pink-100 text-pink-700 rounded font-semibold">
                               여
                             </span>
                           ) : (
-                            <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">
+                            <span className="inline-block transform -translate-x-8 px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">
                               -
                             </span>
                           )}
@@ -482,9 +494,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
                         
-                        {/* 출입기록 (출입중일 때만 표시) */}
+                        {/* 출입기록 (출입중일 때만 표시, 퇴장 시 숨김) */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                          {member.is_active && member.checkin_time ? (
+                          {member.is_active && member.checkin_time && !member.checkout_time ? (
                             <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-700 rounded font-semibold">
                               {formatTime(member.checkin_time)}
                             </span>
@@ -495,7 +507,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
                         {/* 퇴장기록 (퇴장했을 때만 표시) */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                          {!member.is_active && member.checkout_time ? (
+                          {member.checkout_time ? (
                             <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">
                               {formatTime(member.checkout_time)}
                             </span>
@@ -504,19 +516,17 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           )}
                         </td>
 
-                        {/* 상태 (출입/퇴장 기록 없으면 - 표시) */}
+                        {/* 상태 (출입중: 초록색, 퇴장: 빨간색, 없으면 - 표시) */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm">
                           <div className="flex items-center justify-center">
-                            {member.checkin_time || member.checkout_time ? (
-                              member.is_active ? (
-                                <div className="group relative flex items-center" title="출입중">
-                                  <div className="w-3 h-3 rounded-full bg-green-500 shadow-md animate-pulse"></div>
-                                </div>
-                              ) : (
-                                <div className="flex items-center" title="퇴장">
-                                  <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
-                                </div>
-                              )
+                            {member.checkout_time ? (
+                              <div className="flex items-center" title="퇴장">
+                                <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
+                              </div>
+                            ) : member.checkin_time ? (
+                              <div className="group relative flex items-center" title="출입중">
+                                <div className="w-3 h-3 rounded-full bg-green-500 shadow-md animate-pulse"></div>
+                              </div>
                             ) : (
                               <span className="text-gray-400">-</span>
                             )}
@@ -594,5 +604,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         </svg>
       </button>
     </div>
+      )}
+    </>
   );
 }

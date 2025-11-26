@@ -16,8 +16,11 @@ class CheckinService:
 
         active_checkin = CheckinRepository.get_active_checkin(self.db, member_id)
         if active_checkin:
+            print(f"❌ [체크인 실패] member_id={member_id}의 active_checkin 존재: {active_checkin}")
             raise HTTPException(status_code=400, detail="이미 입장 상태입니다.")
 
+        print(f"✅ [체크인 시작] member_id={member_id}, 이전 기록 없음")
+        
         today = datetime.now().date()
         membership_end = member.get('membership_end_date')
         
@@ -26,9 +29,10 @@ class CheckinService:
 
         checkin = CheckinRepository.create_checkin(self.db, member_id)
 
-        # 입장 시 is_active = True로 변경
-        from ..repositories.member_repository import MemberRepository as MR
-        MR.set_active_status(self.db, member_id, True)
+        # 입장 시 members 테이블 업데이트: checkin_time 설정, checkout_time NULL로 초기화
+        update_sql = "UPDATE members SET checkin_time = %s, checkout_time = NULL WHERE member_id = %s"
+        self.db.execute(update_sql, (checkin.get('checkin_time'), member_id))
+        self.db.connection.commit()
 
         response = {
             "status": "success",
@@ -59,18 +63,29 @@ class CheckinService:
         if checkin.get('checkout_time'):
             raise HTTPException(status_code=400, detail="이미 퇴장 처리된 기록입니다.")
 
+        print(f"🔵 [퇴장 시작] checkin_id={checkin_id}, member_id={checkin.get('member_id')}")
+        
         updated_checkin = CheckinRepository.update_checkout(self.db, checkin_id)
+        
+        print(f"✅ [퇴장 완료] checkin_id={checkin_id}, checkout_time={updated_checkin.get('checkout_time')}")
         
         duration = updated_checkin.get('checkout_time') - updated_checkin.get('checkin_time')
 
-        # 퇴장 시 is_active = False로 변경
-        from ..repositories.member_repository import MemberRepository as MR
-        MR.set_active_status(self.db, checkin.get('member_id'), False)
+        # 회원 정보 조회 (이름 반환용)
+        member = MemberRepository.get_member_by_id(self.db, checkin.get('member_id'))
+
+        # 퇴장 시에는 is_active를 변경하지 않음 (관리자가 삭제 버튼을 눌렀을 때만 변경)
+        # members 테이블에서 checkin_time을 NULL로, checkout_time 업데이트
+        update_sql = "UPDATE members SET checkin_time = NULL, checkout_time = %s WHERE member_id = %s"
+        self.db.execute(update_sql, (updated_checkin.get('checkout_time'), checkin.get('member_id')))
+        self.db.connection.commit()
 
         return {
             "status": "success",
             "checkin_id": checkin.get('id'),
             "member_id": checkin.get('member_id'),
+            "member_name": member.get('name') if member else None,
+            "membership_end_date": member.get('membership_end_date') if member else None,
             "checkin_time": checkin.get('checkin_time').strftime("%Y-%m-%d %H:%M:%S"),
             "checkout_time": updated_checkin.get('checkout_time').strftime("%Y-%m-%d %H:%M:%S"),
             "duration_minutes": int(duration.total_seconds() / 60)

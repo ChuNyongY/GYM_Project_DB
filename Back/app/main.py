@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
-from .routers import kiosk, admin, members, rentals, checkin
+from .routers import kiosk, admin, members, rentals, checkin, deleted_members
 from .database import get_connection
 
 # 설정 로드
@@ -32,6 +32,7 @@ app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["A
 app.include_router(members.router, prefix=f"{settings.API_PREFIX}/members", tags=["Members"])
 app.include_router(rentals.router, prefix=f"{settings.API_PREFIX}/rentals", tags=["Rentals"])
 app.include_router(checkin.router, prefix=f"{settings.API_PREFIX}/checkin", tags=["Check-in"])
+app.include_router(deleted_members.router, prefix=f"{settings.API_PREFIX}/deleted-members", tags=["Deleted Members"])
 
 # 상태 확인 엔드포인트
 @app.get("/")

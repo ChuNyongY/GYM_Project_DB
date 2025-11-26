@@ -280,7 +280,9 @@ export default function MemberDrawer({
       
     } catch (error: any) {
       console.error('저장 실패:', error);
-      alert('저장에 실패했습니다.');
+      // 서버에서 반환한 에러 메시지 표시
+      const errorMessage = error.response?.data?.detail || '저장에 실패했습니다.';
+      alert(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -342,9 +344,6 @@ export default function MemberDrawer({
                 <> <span className="text-3xl">👤</span> {member?.name}님 </>
               )}
             </h2>
-            {!isNewMember && member && (
-              <p className="text-blue-100 text-sm mt-1">회원번호: {member.displayRank || member.member_rank}번</p>
-            )}
           </div>
           <div className="flex gap-2">
             {isEditMode || isNewMember ? (
@@ -394,7 +393,17 @@ export default function MemberDrawer({
             <dl className="grid grid-cols-2 gap-4">
               <div><dt className="text-sm text-gray-600 mb-1">이름</dt><dd className="text-xl font-bold text-gray-900">{member?.name}</dd></div>
               <div><dt className="text-sm text-gray-600 mb-1">성별</dt><dd className="text-xl font-bold text-gray-900">{member?.gender === 'M' ? '남자' : member?.gender === 'F' ? '여자' : '-'}</dd></div>
-              <div className="col-span-2"><dt className="text-sm text-gray-600 mb-1">전화번호</dt><dd className="text-xl font-bold text-gray-900">{member?.phone_number}</dd></div>
+              <div><dt className="text-sm text-gray-600 mb-1">전화번호</dt><dd className="text-xl font-bold text-gray-900">{member?.phone_number}</dd></div>
+              <div>
+                <dt className="text-sm text-gray-600 mb-1">가입일</dt>
+                <dd className="text-lg font-semibold text-gray-900">
+                  {member?.created_at ? new Date(member.created_at).toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                  }).replace(/\. /g, '.').replace(/\.$/, '') : '-'}
+                </dd>
+              </div>
             </dl>
           )}
         </div>
@@ -414,9 +423,16 @@ export default function MemberDrawer({
                 <div className="border-t-2 border-gray-200 pt-3 mt-3">
                   <label className="block text-sm font-semibold text-green-700 mb-3">🏋️ PT권</label>
                   <div className="grid grid-cols-4 gap-3">
-                    {['PT(1개월)', 'PT(3개월)', 'PT(6개월)', 'PT(1년)'].map((type) => (
-                      <button key={type} type="button" onClick={() => handleMembershipChange(type)} className={`px-6 py-3 rounded-lg font-semibold transition-all ${editForm.membership_type === type ? 'bg-green-600 text-white shadow-lg scale-105' : 'bg-green-50 text-green-700 border-2 border-green-300 hover:bg-green-100'}`}>{type}</button>
-                    ))}
+                      {['1개월', '3개월', '6개월', '1년'].map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => handleMembershipChange(`PT(${type})`)}
+                          className={`px-6 py-3 rounded-lg font-semibold transition-all ${editForm.membership_type === `PT(${type})` ? 'bg-green-600 text-white shadow-lg scale-105' : 'bg-green-50 text-green-700 border-2 border-green-300 hover:bg-green-100'}`}
+                        >
+                          {type}
+                        </button>
+                      ))}
                   </div>
                 </div>
               </div>

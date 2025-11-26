@@ -135,4 +135,38 @@ export const adminService = {
     });
     return response.data;
   },
+
+  // 삭제된 회원 목록 조회
+  getDeletedMembers: async (params?: {
+    page?: number;
+    size?: number;
+    search?: string;
+  }) => {
+    const response = await client.get('/deleted-members', { params });
+    return response.data;
+  },
+
+  // 회원 복원
+  restoreMember: async (memberId: number) => {
+    const response = await client.post(`/deleted-members/${memberId}/restore`);
+    return response.data;
+  },
+
+  // 모든 삭제된 회원 복원
+  restoreAll: async () => {
+    const response = await client.post('/deleted-members/restore-all');
+    return response.data;
+  },
+
+  // 회원 영구 삭제
+  permanentDeleteMember: async (memberId: number) => {
+    const response = await client.delete(`/deleted-members/${memberId}`);
+    return response.data;
+  },
+
+  // 모든 삭제된 회원 영구 삭제
+  permanentDeleteAll: async () => {
+    const response = await client.delete('/deleted-members');
+    return response.data;
+  },
 };
