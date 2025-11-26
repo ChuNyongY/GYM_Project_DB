@@ -97,10 +97,17 @@ class AdminService:
         search: Optional[str] = None, 
         status_filter: str = 'all',
         sort_by: Optional[str] = None,
-        gender: Optional[str] = None
+        gender: Optional[str] = None,
+        membership_filter: Optional[str] = None,
+        locker_filter: bool = False,
+        uniform_filter: bool = False,
+        checkin_status: Optional[str] = None
     ) -> Dict:
         """회원 목록 조회 (출입기록 복구 완료)"""
         try:
+            # 🔍 디버그 로그 추가
+            print(f"🔍 [DEBUG] get_members 호출됨 - sort_by: {sort_by}, page: {page}, size: {size}")
+            
             offset = (page - 1) * size
             params = []
             
@@ -150,8 +157,28 @@ class AdminService:
             if gender:
                 sql += " AND m.gender = %s"
                 params.append(gender)
+            
+            # 4. 라커룸 필터
+            if locker_filter:
+                sql += " AND m.locker_type IS NOT NULL"
+            
+            # 5. 회원복 필터
+            if uniform_filter:
+                sql += " AND m.uniform_type IS NOT NULL"
+            
+            # 6. 활성/비활성 필터
+            if checkin_status == "active":
+                sql += " AND (SELECT checkin_time FROM checkins WHERE member_id = m.member_id AND checkout_time IS NULL ORDER BY checkin_time DESC LIMIT 1) IS NOT NULL"
+            elif checkin_status == "inactive":
+                sql += " AND (SELECT checkout_time FROM checkins WHERE member_id = m.member_id ORDER BY checkin_time DESC LIMIT 1) IS NOT NULL"
+            
+            # 7. PT권 / 회원권 필터
+            if membership_filter == "pt":
+                sql += " AND m.membership_type LIKE 'PT%%'"
+            elif membership_filter == "membership":
+                sql += " AND m.membership_type NOT LIKE 'PT%%' AND m.membership_type IS NOT NULL"
 
-            # 4. 정렬 로직
+            # 8. 정렬 로직
             order_clause = "m.created_at DESC" # 기본값
             
             if sort_by == 'recent_checkin':
@@ -160,6 +187,41 @@ class AdminService:
                 order_clause = "m.name ASC"
             elif sort_by == 'end_date':
                 order_clause = "m.membership_end_date ASC"
+            elif sort_by == 'member_rank_desc':
+                order_clause = "m.member_id DESC"  # member_id 내림차순
+            elif sort_by == 'member_rank_asc':
+                order_clause = "m.member_id ASC"   # member_id 오름차순
+            elif sort_by == 'membership_type_asc':
+                order_clause = """CASE 
+                    WHEN m.membership_type = 'PT(1개월)' THEN 1
+                    WHEN m.membership_type = 'PT(3개월)' THEN 2
+                    WHEN m.membership_type = 'PT(6개월)' THEN 3
+                    WHEN m.membership_type = 'PT(1년)' THEN 4
+                    WHEN m.membership_type = '1개월' THEN 5
+                    WHEN m.membership_type = '3개월' THEN 6
+                    WHEN m.membership_type = '6개월' THEN 7
+                    WHEN m.membership_type = '1년' THEN 8
+                    ELSE 9 
+                END ASC"""
+            elif sort_by == 'locker_type_asc':
+                order_clause = """CASE 
+                    WHEN m.locker_type LIKE '1개월%%' THEN 1
+                    WHEN m.locker_type LIKE '3개월%%' THEN 2
+                    WHEN m.locker_type LIKE '6개월%%' THEN 3
+                    WHEN m.locker_type LIKE '12개월%%' OR m.locker_type LIKE '1년%%' THEN 4
+                    ELSE 5 
+                END ASC"""
+            elif sort_by == 'uniform_type_asc':
+                order_clause = """CASE 
+                    WHEN m.uniform_type LIKE '1개월%%' THEN 1
+                    WHEN m.uniform_type LIKE '3개월%%' THEN 2
+                    WHEN m.uniform_type LIKE '6개월%%' THEN 3
+                    WHEN m.uniform_type LIKE '12개월%%' OR m.uniform_type LIKE '1년%%' THEN 4
+                    ELSE 5 
+                END ASC"""
+            
+            # 🔍 디버그 로그 추가
+            print(f"🔍 [DEBUG] sort_by: '{sort_by}', order_clause: '{order_clause}'")
             
             sql += f" ORDER BY {order_clause}"
             sql += " LIMIT %s OFFSET %s"
@@ -184,6 +246,14 @@ class AdminService:
             if gender:
                 count_sql += " AND m.gender = %s"
                 count_params.append(gender)
+            if locker_filter:
+                count_sql += " AND m.locker_type IS NOT NULL"
+            if uniform_filter:
+                count_sql += " AND m.uniform_type IS NOT NULL"
+            if checkin_status == "active":
+                count_sql += " AND (SELECT checkin_time FROM checkins WHERE member_id = m.member_id AND checkout_time IS NULL ORDER BY checkin_time DESC LIMIT 1) IS NOT NULL"
+            elif checkin_status == "inactive":
+                count_sql += " AND (SELECT checkout_time FROM checkins WHERE member_id = m.member_id ORDER BY checkin_time DESC LIMIT 1) IS NOT NULL"
             
             self.db.execute(count_sql, tuple(count_params))
             result = self.db.fetchone()
@@ -228,7 +298,11 @@ class AdminService:
             }
             
         except Exception as e:
+            import traceback
             print(f"❌ Error in get_members: {str(e)}")
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            print(f"❌ SQL: {sql if 'sql' in locals() else 'SQL not generated'}")
+            print(f"❌ Params: {params if 'params' in locals() else 'No params'}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"회원 목록 조회 실패: {str(e)}"

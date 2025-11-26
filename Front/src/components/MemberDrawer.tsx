@@ -3,7 +3,6 @@ import { adminService } from "../services/adminService";
 
 interface MemberDrawerProps {
   member: any | null;
-  memberIndex?: number;
   onClose: () => void;
   onSave: () => void;
   isNewMember?: boolean;
@@ -11,7 +10,6 @@ interface MemberDrawerProps {
 
 export default function MemberDrawer({ 
   member, 
-  memberIndex,
   onClose, 
   onSave,
   isNewMember = false
@@ -39,6 +37,15 @@ export default function MemberDrawer({
   const [loadingHistory, setLoadingHistory] = useState(!isNewMember);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // 디버깅: member 객체 확인
+  useEffect(() => {
+    if (member) {
+      console.log('🔍 [MemberDrawer] member 객체:', member);
+      console.log('🔍 [MemberDrawer] member.member_rank:', member.member_rank);
+      console.log('🔍 [MemberDrawer] member.member_id:', member.member_id);
+    }
+  }, [member]);
 
   // 전화번호 자동 포맷팅
   const formatPhoneNumber = (value: string) => {
@@ -88,19 +95,39 @@ export default function MemberDrawer({
     const start = new Date(startDate);
     let endDate = new Date(start);
 
-    switch(type) {
-      case '1개월':
-        endDate.setMonth(endDate.getMonth() + 1);
-        break;
-      case '3개월':
-        endDate.setMonth(endDate.getMonth() + 3);
-        break;
-      case '6개월':
-        endDate.setMonth(endDate.getMonth() + 6);
-        break;
-      case '1년':
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        break;
+    // PT권 처리
+    if (type.startsWith('PT(')) {
+      const innerType = type.slice(3, -1); // 'PT(1개월)' -> '1개월'
+      switch(innerType) {
+        case '1개월':
+          endDate.setMonth(endDate.getMonth() + 1);
+          break;
+        case '3개월':
+          endDate.setMonth(endDate.getMonth() + 3);
+          break;
+        case '6개월':
+          endDate.setMonth(endDate.getMonth() + 6);
+          break;
+        case '1년':
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          break;
+      }
+    } else {
+      // 일반 회원권 처리
+      switch(type) {
+        case '1개월':
+          endDate.setMonth(endDate.getMonth() + 1);
+          break;
+        case '3개월':
+          endDate.setMonth(endDate.getMonth() + 3);
+          break;
+        case '6개월':
+          endDate.setMonth(endDate.getMonth() + 6);
+          break;
+        case '1년':
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          break;
+      }
     }
 
     return endDate.toISOString().split('T')[0];
@@ -315,8 +342,8 @@ export default function MemberDrawer({
                 <> <span className="text-3xl">👤</span> {member?.name}님 </>
               )}
             </h2>
-            {!isNewMember && memberIndex && (
-              <p className="text-blue-100 text-sm mt-1">회원번호: {member.member_rank}번</p>
+            {!isNewMember && member && (
+              <p className="text-blue-100 text-sm mt-1">회원번호: {member.displayRank || member.member_rank}번</p>
             )}
           </div>
           <div className="flex gap-2">
@@ -379,10 +406,18 @@ export default function MemberDrawer({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">회원권 종류 <span className="text-red-500">*</span></label>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-3 mb-3">
                   {['1개월', '3개월', '6개월', '1년'].map((type) => (
                     <button key={type} type="button" onClick={() => handleMembershipChange(type)} className={`px-6 py-3 rounded-lg font-semibold transition-all ${editForm.membership_type === type ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-gray-50'}`}>{type}</button>
                   ))}
+                </div>
+                <div className="border-t-2 border-gray-200 pt-3 mt-3">
+                  <label className="block text-sm font-semibold text-green-700 mb-3">🏋️ PT권</label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {['PT(1개월)', 'PT(3개월)', 'PT(6개월)', 'PT(1년)'].map((type) => (
+                      <button key={type} type="button" onClick={() => handleMembershipChange(type)} className={`px-6 py-3 rounded-lg font-semibold transition-all ${editForm.membership_type === type ? 'bg-green-600 text-white shadow-lg scale-105' : 'bg-green-50 text-green-700 border-2 border-green-300 hover:bg-green-100'}`}>{type}</button>
+                    ))}
+                  </div>
                 </div>
               </div>
               {editForm.membership_type && (
@@ -394,7 +429,18 @@ export default function MemberDrawer({
             </div>
           ) : (
             <dl className="grid grid-cols-2 gap-4">
-              <div><dt className="text-sm text-gray-600 mb-1">회원권 종류</dt><dd><span className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-lg">{member?.membership_type || '-'}</span></dd></div>
+              <div>
+                <dt className="text-sm text-gray-600 mb-1">회원권 종류</dt>
+                <dd>
+                  <span className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${
+                    member?.membership_type?.startsWith('PT') 
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                  }`}>
+                    {member?.membership_type || '-'}
+                  </span>
+                </dd>
+              </div>
               <div className="col-span-2 grid grid-cols-2 gap-4 mt-2">
                 <div><dt className="text-sm text-gray-600 mb-1">시작일</dt><dd className="text-lg font-semibold text-gray-900">{member?.membership_start_date || '-'}</dd></div>
                 <div><dt className="text-sm text-gray-600 mb-1">종료일</dt><dd className="text-lg font-semibold text-gray-900">{member?.membership_end_date || '-'}</dd></div>

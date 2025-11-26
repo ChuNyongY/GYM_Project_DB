@@ -16,7 +16,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [totalPages, setTotalPages] = useState(1);
   const [totalMembers, setTotalMembers] = useState(0);
   const [selectedMember, setSelectedMember] = useState<any>(null);
-  const [selectedMemberIndex, setSelectedMemberIndex] = useState<number>(0);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -115,7 +114,18 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       });
       setCurrentPage(1);
     } else if (key === "PT권") {
-      // PT권 버튼 (껍데기만, 아무 동작 없음)
+      // PT권 토글 (회원권과 상호 배제, 다른 필터와는 중복 가능)
+      setSelectedTabs((prev) => {
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원번호" && k !== "회원권");
+        if (prev.includes(key)) {
+          // 이미 선택되어 있으면 해제
+          const result = filtered.filter((k) => k !== key);
+          return result.length === 0 ? ["전체"] : result;
+        } else {
+          // 새로 선택
+          return [...filtered, key];
+        }
+      });
       setCurrentPage(1);
     }
   };
@@ -156,6 +166,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       // 회원권 정렬
       if (selectedTabs.includes("회원권")) {
         console.log('✅ 회원권 필터 적용');
+        params.membership_filter = 'membership';
+        params.sort_by = 'membership_type_asc';
+      }
+
+      // PT권 필터 및 정렬
+      if (selectedTabs.includes("PT권")) {
+        console.log('✅ PT권 필터 적용');
+        params.membership_filter = 'pt';
         params.sort_by = 'membership_type_asc';
       }
 
@@ -241,12 +259,24 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const handleAddMember = () => {
     setIsAddingNew(true);
     setSelectedMember(null);
-    setSelectedMemberIndex(0);
   };
 
   const handleRowClick = (member: any, index: number) => {
-    setSelectedMember(member);
-    setSelectedMemberIndex((currentPage - 1) * 20 + index + 1);
+    // 표시용 회원번호 계산
+    let displayRank;
+    if (selectedTabs.includes("회원번호")) {
+      displayRank = (currentPage - 1) * 20 + index + 1;
+    } else {
+      displayRank = totalMembers - ((currentPage - 1) * 20 + index);
+    }
+    
+    // member 객체에 displayRank 추가
+    const memberWithRank = {
+      ...member,
+      displayRank: displayRank
+    };
+    
+    setSelectedMember(memberWithRank);
     setIsAddingNew(false);
   };
 
@@ -303,7 +333,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         <div className="flex items-center">
           <button 
             onClick={handleLogout} 
-            className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-sm mr-2"
+            className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-sm ml-auto"
             style={{marginTop: '8px', marginBottom: '8px'}}
           >
             로그아웃
@@ -540,7 +570,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           >
             <MemberDrawer
               member={selectedMember}
-              memberIndex={selectedMemberIndex}
               onClose={handleCloseDrawer}
               onSave={handleSave}
               isNewMember={isAddingNew}

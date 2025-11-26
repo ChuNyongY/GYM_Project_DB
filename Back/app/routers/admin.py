@@ -39,7 +39,7 @@ class MemberCreateRequest(BaseModel):
     @field_validator('membership_type')
     @classmethod
     def validate_membership_type(cls, v):
-        allowed = ['1개월', '3개월', '6개월', '1년']
+        allowed = ['1개월', '3개월', '6개월', '1년', 'PT(1개월)', 'PT(3개월)', 'PT(6개월)', 'PT(1년)']
         if v not in allowed:
             raise ValueError(f'회원권 종류는 {", ".join(allowed)} 중 하나여야 합니다.')
         return v
@@ -64,7 +64,7 @@ class MemberUpdateRequest(BaseModel):
     @classmethod
     def validate_membership_type(cls, v):
         if v is not None:
-            allowed = ['1개월', '3개월', '6개월', '1년']
+            allowed = ['1개월', '3개월', '6개월', '1년', 'PT(1개월)', 'PT(3개월)', 'PT(6개월)', 'PT(1년)']
             if v not in allowed:
                 raise ValueError(f'회원권 종류는 {", ".join(allowed)} 중 하나여야 합니다.')
         return v
@@ -119,12 +119,20 @@ async def get_members(
     status: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
     gender: Optional[str] = Query(None),
+    membership_filter: Optional[str] = Query(None),
+    locker_filter: bool = Query(False),
+    uniform_filter: bool = Query(False),
+    checkin_status: Optional[str] = Query(None),
     cursor=Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ):
     admin_service = AdminService(cursor)
     await admin_service.get_current_admin(token)
-    return admin_service.get_members(page=page, size=size, search=search, status_filter=status, sort_by=sort_by, gender=gender)
+    return admin_service.get_members(
+        page=page, size=size, search=search, status_filter=status, sort_by=sort_by, 
+        gender=gender, membership_filter=membership_filter, locker_filter=locker_filter, uniform_filter=uniform_filter,
+        checkin_status=checkin_status
+    )
 
 @router.get("/members/{member_id}")
 async def get_member(

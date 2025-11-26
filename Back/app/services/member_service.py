@@ -70,7 +70,7 @@ class MemberService:
     def search_by_phone_tail(self, tail: str):
          return self.search_by_last_four_digits(tail)
 
-    # [수정] gender, sort_by 인자가 추가되었습니다. (500 에러 해결)
+    # [수정] gender, sort_by, membership_filter, checkin_status, locker_filter, uniform_filter 인자가 추가되었습니다.
     def get_members_list(
         self,
         page: int = 1,
@@ -78,7 +78,11 @@ class MemberService:
         search: Optional[str] = None,
         status: Optional[str] = None,
         gender: Optional[str] = None,
-        sort_by: Optional[str] = None
+        sort_by: Optional[str] = None,
+        membership_filter: Optional[str] = None,
+        checkin_status: Optional[str] = None,
+        locker_filter: bool = False,
+        uniform_filter: bool = False
     ) -> Tuple[List[dict], int]:
         skip = (page - 1) * size
         return self.member_repo.get_members_paginated(
@@ -88,7 +92,11 @@ class MemberService:
             search=search,
             status=status,
             gender=gender,
-            sort_by=sort_by
+            sort_by=sort_by,
+            membership_filter=membership_filter,
+            checkin_status=checkin_status,
+            locker_filter=locker_filter,
+            uniform_filter=uniform_filter
         )
 
     def check_member_validity(self, member_id: int) -> Dict:

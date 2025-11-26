@@ -18,11 +18,16 @@ async def list_members(
     page: int = Query(1), size: int = Query(20), 
     search: Optional[str] = None, status: Optional[str] = None,
     gender: Optional[str] = None, sort_by: Optional[str] = None,
+    membership_filter: Optional[str] = None, checkin_status: Optional[str] = None,
+    locker_filter: bool = Query(False), uniform_filter: bool = Query(False),
     db = Depends(get_db), token: str = Depends(oauth2_scheme)
 ):
     member_service = MemberService(db)
     # 500 에러 방지용 파라미터 전달
-    members, total = member_service.get_members_list(page, size, search, status, gender, sort_by)
+    members, total = member_service.get_members_list(
+        page, size, search, status, gender, sort_by, membership_filter, checkin_status,
+        locker_filter, uniform_filter
+    )
     return {"total": total, "page": page, "size": size, "members": members}
 
 @router.get("/{member_id}", response_model=MemberResponse)

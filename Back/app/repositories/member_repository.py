@@ -214,48 +214,82 @@ class MemberRepository:
         search: Optional[str] = None,
         status: Optional[str] = None,
         gender: Optional[str] = None,
-        sort_by: Optional[str] = None
+        sort_by: Optional[str] = None,
+        membership_filter: Optional[str] = None,
+        checkin_status: Optional[str] = None,
+        locker_filter: bool = False,
+        uniform_filter: bool = False
     ) -> Tuple[List[dict], int]:
         """회원 목록 조회"""
-        conditions = []
-        params = []
-
-        # [수정] phone -> phone_number
+        where_conditions = []
+        
+        # 검색
         if search:
-            conditions.append("(name LIKE %s OR phone_number LIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%"])
-
+            where_conditions.append(f"(name LIKE '%{search}%' OR phone_number LIKE '%{search}%')")
+        
+        # 성별
         if gender:
-            conditions.append("gender = %s")
-            params.append(gender)
+            where_conditions.append(f"gender = '{gender}'")
+        
+        # 라커룸 필터
+        if locker_filter:
+            where_conditions.append("locker_type IS NOT NULL")
+        
+        # 회원복 필터
+        if uniform_filter:
+            where_conditions.append("uniform_type IS NOT NULL")
+        
+        # 활성/비활성
+        if checkin_status == "active":
+            where_conditions.append("checkin_time IS NOT NULL")
+        elif checkin_status == "inactive":
+            where_conditions.append("checkout_time IS NOT NULL")
+        
+        # PT권 / 회원권 필터 추가
+        if membership_filter == "pt":
+            where_conditions.append("membership_type LIKE 'PT%'")
+        elif membership_filter == "membership":
+            where_conditions.append("membership_type NOT LIKE 'PT%' AND membership_type IS NOT NULL")
+        
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 
-        # [수정] end_date -> membership_end_date
-        if status == "active":
-            conditions.append("is_active = TRUE")
-            conditions.append("(membership_end_date IS NULL OR membership_end_date >= CURDATE())")
-        elif status == "inactive":
-            conditions.append("(is_active = FALSE OR (membership_end_date IS NOT NULL AND membership_end_date < CURDATE()))")
-        elif status == "expiring_soon":
-            conditions.extend([
-                "is_active = TRUE",
-                "membership_end_date IS NOT NULL",
-                "membership_end_date >= CURDATE()",
-                "membership_end_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)"
-            ])
-
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-
-        # 정렬
-        order_clause = "created_at DESC"
-        if sort_by == "recent_checkin":
+        # 정렬 (단순화)
+        if sort_by == "member_rank_asc":
+            order_clause = "member_id ASC"
+        elif sort_by == "member_rank_desc":
+            order_clause = "member_id DESC"
+        elif sort_by == "membership_type_asc":
+            # PT권 정렬: PT(1개월), PT(3개월), PT(6개월), PT(1년) 순서
+            order_clause = """CASE 
+                WHEN membership_type = 'PT(1개월)' THEN 1
+                WHEN membership_type = 'PT(3개월)' THEN 2
+                WHEN membership_type = 'PT(6개월)' THEN 3
+                WHEN membership_type = 'PT(1년)' THEN 4
+                WHEN membership_type = '1개월' THEN 5
+                WHEN membership_type = '3개월' THEN 6
+                WHEN membership_type = '6개월' THEN 7
+                WHEN membership_type = '1년' THEN 8
+                ELSE 9
+            END ASC"""
+        elif sort_by == "locker_type_asc":
+            order_clause = "locker_type ASC"
+        elif sort_by == "uniform_type_asc":
+            order_clause = "uniform_type ASC"
+        elif sort_by == "checkin_time_desc":
             order_clause = "checkin_time DESC"
-        elif sort_by == "name":
-            order_clause = "name ASC"
-        elif sort_by == "end_date":
-            order_clause = "membership_end_date ASC"
+        elif sort_by == "checkout_time_desc":
+            order_clause = "checkout_time DESC"
+        else:
+            order_clause = "member_id DESC"
+
+        # 디버깅 로그
+        print(f"🔍 [DEBUG] membership_filter: {membership_filter}")
+        print(f"🔍 [DEBUG] sort_by: {sort_by}")
+        print(f"🔍 [DEBUG] where_clause: {where_clause}")
+        print(f"🔍 [DEBUG] order_clause: {order_clause}")
 
         count_sql = f"SELECT COUNT(*) as total FROM members WHERE {where_clause}"
-        cursor.execute(count_sql, tuple(params))
+        cursor.execute(count_sql)
         result = cursor.fetchone()
         total = result['total'] if result else 0
 
@@ -276,9 +310,9 @@ class MemberRepository:
         FROM members
         WHERE {where_clause}
         ORDER BY {order_clause}
-        LIMIT %s OFFSET %s
+        LIMIT {limit} OFFSET {skip}
         """
-        cursor.execute(sql, tuple(params + [limit, skip]))
+        cursor.execute(sql)
         members = cursor.fetchall()
 
         return members, total
