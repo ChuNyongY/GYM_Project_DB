@@ -1,5 +1,5 @@
 from typing import List, Optional, Tuple
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pymysql.cursors import DictCursor
 
 class CheckinRepository:
@@ -16,6 +16,59 @@ class CheckinRepository:
         checkin_id = cursor.lastrowid
         cursor.connection.commit()
         
+        # Create a per-checkin scheduled EVENT that will run once at
+        # the actual stored checkin_time + 3 hours to set checkout_time if
+        # the user hasn't checked out. Read the stored checkin_time from DB
+        # to avoid scheduling drift when the DB time differs from the app.
+        try:
+            event_name = f"auto_checkout_checkin_{checkin_id}"
+            # Ensure no leftover event with same name
+            try:
+                cursor.execute(f"DROP EVENT IF EXISTS {event_name}")
+            except Exception:
+                # ignore drop failures
+                pass
+            # Fetch the stored checkin_time to compute an exact schedule time
+            cursor.execute("SELECT checkin_time FROM checkins WHERE id = %s", (checkin_id,))
+            row = cursor.fetchone()
+            if row and row.get('checkin_time'):
+                stored_checkin = row['checkin_time']
+                # compute event run time = stored_checkin + 3 hours
+                run_time = (stored_checkin + timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')
+
+                # Build CREATE EVENT as a single-statement body
+                create_sql = f"""
+                CREATE EVENT `{event_name}`
+                ON SCHEDULE AT '{run_time}'
+                ON COMPLETION NOT PRESERVE
+                DO
+                UPDATE checkins c
+                JOIN members m ON m.member_id = c.member_id
+                SET c.checkout_time = NOW(), m.checkin_time = NULL, m.checkout_time = NOW()
+                WHERE c.id = {checkin_id} AND c.checkout_time IS NULL;
+                """
+                cursor.execute(create_sql)
+                cursor.connection.commit()
+            else:
+                # Fallback: schedule relative to CURRENT_TIMESTAMP (less accurate)
+                create_sql = f"""
+                CREATE EVENT `{event_name}`
+                ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 3 HOUR
+                ON COMPLETION NOT PRESERVE
+                DO
+                UPDATE checkins c
+                JOIN members m ON m.member_id = c.member_id
+                SET c.checkout_time = NOW(), m.checkin_time = NULL, m.checkout_time = NOW()
+                WHERE c.id = {checkin_id} AND c.checkout_time IS NULL;
+                """
+                cursor.execute(create_sql)
+                cursor.connection.commit()
+            cursor.connection.commit()
+        except Exception as e:
+            # Event creation can fail if the DB user lacks EVENT privileges;
+            # log and continue so checkin creation is not blocked.
+            print(f"⚠️ per-checkin event 생성 실패 (checkin_id={checkin_id}): {e}")
+
         return CheckinRepository.get_checkin_by_id(cursor, checkin_id)
 
     @staticmethod

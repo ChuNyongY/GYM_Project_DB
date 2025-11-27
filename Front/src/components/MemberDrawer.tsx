@@ -511,15 +511,14 @@ export default function MemberDrawer({
                   ) : (<span className="text-gray-400">미선택</span>)}
                 </dd>
               </div>
-              {member?.locker_type && (
-                <>
-                  <div><dt className="text-sm text-gray-600 mb-1">락커 번호</dt><dd><span className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-lg">{member.locker_number ? `${member.locker_number}번` : '미배정'}</span></dd></div>
-                  <div className="col-span-2 grid grid-cols-2 gap-4 mt-2">
-                    <div><dt className="text-sm text-gray-600 mb-1">시작일</dt><dd className="text-lg font-semibold text-gray-900">{member?.locker_start_date || '-'}</dd></div>
-                    <div><dt className="text-sm text-gray-600 mb-1">종료일</dt><dd className="text-lg font-semibold text-gray-900">{member?.locker_end_date || '-'}</dd></div>
-                  </div>
-                </>
-              )}
+              {/* 항상 락커 번호/기간 표시: 곧 만료일 경우에도 상세에서 락커번호를 보여줘야 함 */}
+              <>
+                <div><dt className="text-sm text-gray-600 mb-1">락커 번호</dt><dd><span className="text-lg font-bold text-gray-800">{member?.locker_number ? `${member.locker_number}번` : '미배정'}</span></dd></div>
+                <div className="col-span-2 grid grid-cols-2 gap-4 mt-2">
+                  <div><dt className="text-sm text-gray-600 mb-1">시작일</dt><dd className="text-lg font-semibold text-gray-900">{member?.locker_start_date || '-'}</dd></div>
+                  <div><dt className="text-sm text-gray-600 mb-1">종료일</dt><dd className="text-lg font-semibold text-gray-900">{member?.locker_end_date || '-'}</dd></div>
+                </div>
+              </>
             </dl>
           )}
         </div>

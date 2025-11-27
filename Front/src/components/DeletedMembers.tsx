@@ -218,7 +218,7 @@ export default function DeletedMembers({ onClose }: DeletedMembersProps) {
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
                         {member.locker_number ? (
                           <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-semibold">
-                            {member.locker_type}{member.locker_number ? ` (${member.locker_number}번)` : ' (미배정)'}
+                            {member.locker_type}{member.locker_number ? `(${member.locker_number}번)` : '(미배정)'}
                           </span>
                         ) : (
                           <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>

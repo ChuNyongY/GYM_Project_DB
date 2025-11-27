@@ -44,6 +44,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { key: "회원권", label: "회원권" },
     { key: "라커룸", label: "라커룸" },
     { key: "회원복", label: "회원복" },
+    { key: "곧 만료", label: "곧 만료" },
+    { key: "만료", label: "만료" },
     { key: "활성", label: "활성" },
     { key: "비활성", label: "비활성" },
     { key: "최근삭제", label: "최근 삭제 기록" },
@@ -136,6 +138,21 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       });
       setCurrentPage(1);
     }
+    else if (key === "곧 만료" || key === "만료") {
+      // 곧 만료/만료는 서로 중복 불가하지만 다른 필터(회원권/라커룸/회원복 등)는 유지
+      setSelectedTabs((prev) => {
+        // 해제: 이미 선택되어 있으면 해당 탭만 제거
+        if (prev.includes(key)) {
+          const without = prev.filter((k) => k !== key);
+          return without.length === 0 ? ["전체"] : without;
+        }
+        // 새로 선택: 기존 필터들 유지하되 다른 만료 탭 제거하고 현재 탭 추가
+        const filtered = prev.filter((k) => k !== "전체" && k !== "회원순서" && k !== "곧 만료" && k !== "만료");
+        return [...filtered, key];
+      });
+      setSelectedGender(null);
+      setCurrentPage(1);
+    }
   };
 
   const fetchMembers = async () => {
@@ -215,7 +232,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       const response = await adminService.getMembers(params);
       console.log('📥 응답 데이터:', response);
       console.log('📊 회원 수:', response.members?.length, '/ 전체:', response.total);
-      
+
       setMembers([...response.members]); // 강제 새 배열 생성
       setTotalMembers(response.total);
       setTotalPages(Math.ceil(response.total / response.size));
@@ -247,6 +264,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     fetchMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, statusFilter, selectedTabs, selectedGender]);
+
+  // 화면에 표시할 멤버 목록을 탭(만료/곧 만료) 조건에 따라 필터링
+  const getDisplayedMembers = () => {
+    if (!members) return [];
+    // 만료 관련 탭이 선택된 경우에는 클라이언트 사이드에서 필터링
+    if (selectedTabs.includes('곧 만료')) {
+      // 곧 만료: 남은 일수가 1~7일인 항목이 하나라도 있으면 포함
+      // 라커 곧 만료는 라커번호가 배정되어 있어야만 포함
+      return members.filter((m) => {
+        const membershipDaysLeft = getDaysLeft(m.membership_end_date);
+        const lockerDaysLeft = getDaysLeft(m.locker_end_date);
+        const uniformDaysLeft = getDaysLeft(m.uniform_end_date);
+        const isSoon = (d: number) => d > 0 && d <= 7;
+        const lockerSoon = m.locker_number ? isSoon(lockerDaysLeft) : false;
+        return isSoon(membershipDaysLeft) || lockerSoon || isSoon(uniformDaysLeft);
+      });
+    }
+    if (selectedTabs.includes('만료')) {
+      // 만료: 남은 일수가 0 이하(오늘 포함)를 만료로 간주
+      // 라커 만료는 라커번호가 배정되어 있을 때만 만료로 간주하여 제거/표시
+      return members.filter((m) => {
+        const membershipDaysLeft = getDaysLeft(m.membership_end_date);
+        const lockerDaysLeft = getDaysLeft(m.locker_end_date);
+        const uniformDaysLeft = getDaysLeft(m.uniform_end_date);
+        const isExpired = (d: number) => d <= 0;
+        const lockerExpired = m.locker_number ? isExpired(lockerDaysLeft) : false;
+        return isExpired(membershipDaysLeft) || lockerExpired || isExpired(uniformDaysLeft);
+      });
+    }
+    return members;
+  };
+
+  const displayedMembers = getDisplayedMembers();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,7 +434,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   <th className="px-2 py-3 text-left -translate-x-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-20">성별</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">전화번호</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">회원권</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">락커룸</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">라커룸</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-28">회원복</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">출입기록</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">퇴장기록</th>
@@ -401,7 +451,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </div>
                     </td>
                   </tr>
-                ) : members.length === 0 ? (
+                ) : displayedMembers.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="px-6 py-16 text-center">
                       <div className="flex flex-col items-center justify-center">
@@ -414,7 +464,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     </td>
                   </tr>
                 ) : (
-                  members.map((member, index) => {
+                  displayedMembers.map((member, index) => {
                     const membershipDaysLeft = getDaysLeft(member.membership_end_date);
                     const lockerDaysLeft = getDaysLeft(member.locker_end_date);
                     const uniformDaysLeft = getDaysLeft(member.uniform_end_date);
@@ -459,38 +509,44 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         </td>
                         {/* 전화번호 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{member.phone_number}</td>
-                        {/* 회원권 (PT권 포함) */}
+                        {/* 회원권 (PT권 포함) - 만료/곧 만료 단일 배지로 표시(예: 곧 만료(7일)) */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                          {member.membership_type?.startsWith('PT') ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-pink-100 text-pink-700 rounded font-semibold">
-                              {member.membership_type}
-                            </span>
-                          ) : member.membership_type ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-semibold">
-                              {member.membership_type}
-                            </span>
+                          {membershipDaysLeft <= 0 ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">만료</span>
+                          ) : membershipDaysLeft <= 7 ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">곧 만료({membershipDaysLeft}일)</span>
+                          ) : (
+                            (member.membership_type && (
+                              <span className={`inline-block px-2 py-1 text-xs ${member.membership_type?.startsWith('PT') ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'} rounded font-semibold`}>{member.membership_type}</span>
+                            )) || (
+                              <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>
+                            )
+                          )}
+                        </td>
+                        {/* 라커룸 (번호/기간) - 곧 만료은 배정 있어야 하며, 만료면 배정 숨김 */}
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
+                          {lockerDaysLeft <= 0 && member.locker_number ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">만료</span>
+                          ) : (lockerDaysLeft <= 7 && member.locker_number) ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">곧 만료({lockerDaysLeft}일)</span>
+                          ) : member.locker_number ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-semibold">{member.locker_type}{`(${member.locker_number}번)`}</span>
                           ) : (
                             <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>
                           )}
                         </td>
-                        {/* 라커룸 (번호/기간) */}
+                        {/* 회원복 - 만료/곧 만료 단일 배지 표시 */}
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                          {member.locker_number ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-semibold">
-                              {member.locker_type}{member.locker_number ? ` (${member.locker_number}번)` : ' (미배정)'}
-                            </span>
+                          {uniformDaysLeft <= 0 ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded font-semibold">만료</span>
+                          ) : uniformDaysLeft <= 7 ? (
+                            <span className="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded font-semibold">곧 만료({uniformDaysLeft}일)</span>
                           ) : (
-                            <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>
-                          )}
-                        </td>
-                        {/* 회원복 */}
-                        <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                          {member.uniform_type ? (
-                            <span className="inline-block px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded font-semibold">
-                              {member.uniform_type}
-                            </span>
-                          ) : (
-                            <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>
+                            (member.uniform_type && (
+                              <span className="inline-block px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded font-semibold">{member.uniform_type}</span>
+                            )) || (
+                              <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded">-</span>
+                            )
                           )}
                         </td>
                         
