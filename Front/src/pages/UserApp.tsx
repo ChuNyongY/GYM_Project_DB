@@ -47,6 +47,13 @@ export default function UserApp() {
     }
   }, [errorMessage]);
 
+  // 실시간 시계 업데이트
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // 체크인 처리 (동명이인 분기 포함)
   // 체크인 로직을 kioskService로 통일
   const handleCheckin = async (candidateId?: number) => {
@@ -68,6 +75,14 @@ export default function UserApp() {
         const tryCheckIn = async () => {
           try {
             const response = await kioskService.checkIn(candidateId);
+            // 백엔드가 'expired' 상태를 200으로 반환할 수 있음 -> 에러 처리
+            if (response.status === 'expired') {
+              const errMsg = response.message
+                ? (response.message.includes('카운터에 문의') ? response.message : `${response.message} 카운터에 문의하세요.`)
+                : '회원권이 만료되었습니다. 카운터에 문의하세요.';
+              setErrorMessage(errMsg);
+              return;
+            }
             if (response.status === 'success') {
               let msg = `✅ 출입이 확인되었습니다!\n\n${response.member_info?.name ?? '회원'}님\n입장 시간: ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
               if (response.member_info?.membership_end_date) {
@@ -153,6 +168,14 @@ export default function UserApp() {
           const tryCheckIn = async () => {
             try {
               const response = await kioskService.checkIn(member.member_id);
+              // 백엔드가 'expired' 상태를 200으로 반환할 수 있음 -> 에러 처리
+              if (response.status === 'expired') {
+                const errMsg = response.message
+                  ? (response.message.includes('카운터에 문의') ? response.message : `${response.message} 카운터에 문의하세요.`)
+                  : '회원권이 만료되었습니다. 카운터에 문의하세요.';
+                setErrorMessage(errMsg);
+                return;
+              }
               if (response.status === 'success') {
                 let msg = `✅ 출입이 확인되었습니다!\n\n${response.member_info?.name ?? '회원'}님\n입장 시간: ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
                 if (response.member_info?.membership_end_date) {
@@ -247,10 +270,10 @@ export default function UserApp() {
             <iframe
               width="100%"
               height="100%"
-              src="https://www.youtube.com/embed/wTc7pfHbNtQ?autoplay=1&mute=1"
+              src="https://www.youtube.com/embed/wTc7pfHbNtQ?autoplay=1&mute=1&loop=1&playlist=wTc7pfHbNtQ"
               title="YouTube video player"
               frameBorder="0"
-              allow="autoplay; encrypted-media"
+              allow="autoplay; encrypted-media; loop"
               allowFullScreen
               style={{ borderRadius: '16px', maxWidth: 960, minHeight: 320 }}
             ></iframe>
@@ -270,13 +293,14 @@ export default function UserApp() {
         {/* 현재 시간 표시 */}
         <div className="absolute bottom-12 left-12 text-white z-50">
           <p className="text-4xl font-bold drop-shadow-lg">
-            {new Date().toLocaleTimeString('ko-KR', { 
+            {currentTime.toLocaleTimeString('ko-KR', { 
               hour: '2-digit', 
-              minute: '2-digit' 
+              minute: '2-digit',
+              second: '2-digit'
             })}
           </p>
           <p className="text-sm opacity-80 drop-shadow-md">
-            {new Date().toLocaleDateString('ko-KR', { 
+            {currentTime.toLocaleDateString('ko-KR', { 
               year: 'numeric',
               month: 'long',
               day: 'numeric',
@@ -317,7 +341,7 @@ export default function UserApp() {
           <h2 className="text-2xl font-bold mb-3">공지사항</h2>
           <div className="space-y-2 text-sm leading-relaxed">
             <p className="flex items-center gap-2">
-              <span className="text-xl">✓</span> 출입체크
+              <span className="text-xl">✓</span> 출입체크 퇴장체크
             </p>
             <p className="flex items-center gap-2">
               <span className="text-xl">✓</span> 휴대폰 끝 4자리 입력 후 확인
